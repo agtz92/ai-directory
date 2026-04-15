@@ -1,0 +1,11 @@
+django==5.0.*
+strawberry-graphql[django]==0.243.*
+strawberry-graphql-django
+django-cors-headers==4.*
+python-decouple==3.*
+psycopg2-binary==2.*
+Pillow==10.*
+django-storages==1.*
+boto3==1.*
+PyJWT==2.*
+cryptography==42.*

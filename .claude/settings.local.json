@@ -1,0 +1,33 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(python -m venv venv)",
+      "Bash(venv/Scripts/pip.exe install:*)",
+      "Bash(C:/GitHub/directorio-ai/venv/Scripts/python.exe -m django startproject directorio_backend .)",
+      "Bash(C:/GitHub/directorio-ai/venv/Scripts/python.exe manage.py startapp core)",
+      "Bash(C:/GitHub/directorio-ai/venv/Scripts/python.exe manage.py startapp users)",
+      "Bash(C:/GitHub/directorio-ai/venv/Scripts/python.exe manage.py startapp directorio)",
+      "Bash(C:/GitHub/directorio-ai/venv/Scripts/python.exe manage.py makemigrations core)",
+      "Bash(C:/GitHub/directorio-ai/venv/Scripts/pip.exe install:*)",
+      "Bash(C:/GitHub/directorio-ai/venv/Scripts/python.exe -c \"import strawberry; print\\(strawberry.__version__\\)\")",
+      "Bash(C:/GitHub/directorio-ai/venv/Scripts/pip.exe list:*)",
+      "Bash(C:/GitHub/directorio-ai/venv/Scripts/python.exe -c \"import strawberry_django; print\\('ok'\\)\")",
+      "Bash(C:/GitHub/directorio-ai/venv/Scripts/python.exe manage.py makemigrations users)",
+      "Bash(C:/GitHub/directorio-ai/venv/Scripts/python.exe manage.py makemigrations directorio)",
+      "Bash(C:/GitHub/directorio-ai/venv/Scripts/python.exe -c ':*)",
+      "Bash(npx --yes create-next-app@latest frontend --typescript --tailwind --app --no-src-dir --eslint --import-alias \"@/*\")",
+      "Bash(npx --yes create-next-app@latest website --typescript --tailwind --app --no-src-dir --eslint --import-alias \"@/*\")",
+      "Bash(npm install:*)",
+      "Bash(npx tsc:*)",
+      "Bash(node -e \"const pkg = require\\('./node_modules/@apollo/client/package.json'\\); console.log\\('Apollo:', pkg.version\\)\")",
+      "Bash(node -e \"const pkg = require\\('./node_modules/@supabase/auth-helpers-nextjs/package.json'\\); console.log\\('Supabase helpers:', pkg.version\\)\")",
+      "Bash(node -e \"const k = Object.keys\\(require\\('@supabase/auth-helpers-nextjs'\\)\\); console.log\\(k.join\\(', '\\)\\)\")",
+      "Bash(python manage.py makemigrations directorio --name=\"widen_categoria_codigo\")",
+      "Bash(pnpm --version)",
+      "Bash(rm -rf node_modules package-lock.json)",
+      "Bash(pnpm install:*)",
+      "Bash(pnpm remove:*)",
+      "Bash(python -c ':*)"
+    ]
+  }
+}
