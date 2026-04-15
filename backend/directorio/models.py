@@ -98,6 +98,9 @@ class Subcategoria(models.Model):
                 name='uniq_subcategoria_cat_slug',
             )
         ]
+        indexes = [
+            models.Index(fields=['nombre'], name='subcategoria_nombre_idx'),
+        ]
         verbose_name = 'Subcategoría'
         verbose_name_plural = 'Subcategorías'
 

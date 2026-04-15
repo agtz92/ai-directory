@@ -41,14 +41,24 @@ class DirectorioQuery:
     def subcategorias(
         self,
         info: Info,
-        categoria_id: strawberry.ID,
+        categoria_id: Optional[strawberry.ID] = None,
         search: str = '',
+        limit: int = 20,
     ) -> List[SubcategoriaType]:
-        """Global — no tenant filter, scoped only to parent category."""
-        qs = Subcategoria.objects.filter(categoria_id=categoria_id)
+        """
+        Global — no tenant filter.
+        Requires categoria_id OR a search term of at least 2 chars to prevent
+        dumping the full dataset. Returns at most `limit` results (capped at 100).
+        """
+        if not categoria_id and len(search.strip()) < 2:
+            return []
+        limit = min(max(limit, 1), 100)
+        qs = Subcategoria.objects.select_related('categoria')
+        if categoria_id:
+            qs = qs.filter(categoria_id=categoria_id)
         if search:
-            qs = qs.filter(nombre__icontains=search)
-        return list(qs)
+            qs = qs.filter(nombre__icontains=search.strip())
+        return list(qs.order_by('categoria__orden', 'orden', 'nombre')[:limit])
 
     @strawberry.field
     def mi_empresa(self, info: Info) -> Optional[EmpresaPerfilType]:

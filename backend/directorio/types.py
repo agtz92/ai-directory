@@ -33,6 +33,10 @@ class SubcategoriaType:
     keywords: auto
     orden: auto
 
+    @strawberry.field
+    def categoria_nombre(self) -> str:
+        return self.categoria.nombre
+
 
 @strawberry_django.type(EmpresaPerfil)
 class EmpresaPerfilType:

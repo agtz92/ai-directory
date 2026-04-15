@@ -153,63 +153,64 @@ class DirectorioMutation:
     def actualizar_empresa_perfil(
         self,
         info: Info,
-        nombre_comercial: str = '',
-        descripcion: str = '',
-        ciudad: str = '',
-        estado: str = '',
-        pais: str = '',
-        telefono: str = '',
-        email_contacto: str = '',
-        sitio_web: str = '',
-        whatsapp: str = '',
+        nombre_comercial: Optional[str] = strawberry.UNSET,
+        descripcion: Optional[str] = strawberry.UNSET,
+        ciudad: Optional[str] = strawberry.UNSET,
+        estado: Optional[str] = strawberry.UNSET,
+        pais: Optional[str] = strawberry.UNSET,
+        telefono: Optional[str] = strawberry.UNSET,
+        email_contacto: Optional[str] = strawberry.UNSET,
+        sitio_web: Optional[str] = strawberry.UNSET,
+        whatsapp: Optional[str] = strawberry.UNSET,
         categoria_principal_id: Optional[strawberry.ID] = None,
         categoria_ids: Optional[List[strawberry.ID]] = strawberry.UNSET,
         subcategoria_ids: Optional[List[strawberry.ID]] = strawberry.UNSET,
-        status: str = '',
+        status: Optional[str] = strawberry.UNSET,
     ) -> EmpresaPerfilType:
         user = get_user_from_request(info)
         tenant = get_tenant_from_user(user)
         empresa = EmpresaPerfil.objects.get(tenant=tenant)
 
-        if nombre_comercial:
+        UNSET = strawberry.UNSET
+        if nombre_comercial is not UNSET and nombre_comercial:
             empresa.nombre_comercial = nombre_comercial
-        if descripcion is not None:
-            empresa.descripcion = descripcion
-        if ciudad is not None:
-            empresa.ciudad = ciudad
-        if estado is not None:
-            empresa.estado = estado
-        if pais:
+        if descripcion is not UNSET:
+            empresa.descripcion = descripcion or ''
+        if ciudad is not UNSET:
+            empresa.ciudad = ciudad or ''
+        if estado is not UNSET:
+            empresa.estado = estado or ''
+        if pais is not UNSET and pais:
             empresa.pais = pais
-        if telefono is not None:
-            empresa.telefono = telefono
-        if email_contacto is not None:
-            empresa.email_contacto = email_contacto
-        if sitio_web is not None:
-            empresa.sitio_web = sitio_web
-        if whatsapp is not None:
-            empresa.whatsapp = whatsapp
-        if status and status in EmpresaPerfil.Status.values:
+        if telefono is not UNSET:
+            empresa.telefono = telefono or ''
+        if email_contacto is not UNSET:
+            empresa.email_contacto = email_contacto or ''
+        if sitio_web is not UNSET:
+            empresa.sitio_web = sitio_web or ''
+        if whatsapp is not UNSET:
+            empresa.whatsapp = whatsapp or ''
+        if status is not UNSET and status and status in EmpresaPerfil.Status.values:
             empresa.status = status
             if status == EmpresaPerfil.Status.PUBLISHED and not empresa.published_at:
                 empresa.published_at = datetime.now(timezone.utc)
 
         empresa.save()
 
-        if categoria_principal_id is not None:
-            if categoria_principal_id:
-                empresa.categoria_principal = Categoria.objects.get(pk=categoria_principal_id)
-            else:
-                empresa.categoria_principal = None
-            empresa.save(update_fields=['categoria_principal'])
-
-        if categoria_ids is not strawberry.UNSET and categoria_ids is not None:
-            enforce_max(empresa, 'max_categorias', len(categoria_ids), 'categorías')
-            empresa.categorias.set(Categoria.objects.filter(pk__in=categoria_ids))
-
         if subcategoria_ids is not strawberry.UNSET and subcategoria_ids is not None:
             enforce_max(empresa, 'max_subcategorias', len(subcategoria_ids), 'subcategorías')
-            empresa.subcategorias.set(Subcategoria.objects.filter(pk__in=subcategoria_ids))
+            subs = list(
+                Subcategoria.objects
+                .filter(pk__in=subcategoria_ids)
+                .select_related('categoria')
+            )
+            empresa.subcategorias.set(subs)
+
+            # Auto-derive categories from selected subcategories (preserves insertion order)
+            cats = list(dict.fromkeys(s.categoria for s in subs))
+            empresa.categorias.set(cats)
+            empresa.categoria_principal = cats[0] if cats else None
+            empresa.save(update_fields=['categoria_principal'])
 
         return (
             EmpresaPerfil.objects
