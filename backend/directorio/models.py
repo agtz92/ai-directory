@@ -56,12 +56,29 @@ def _unique_slug_within_subcategoria_marca(base: str, subcategoria_id, exclude_p
 
 
 def _unique_slug_within_marca(base: str, marca_id, exclude_pk=None) -> str:
-    """Generate a slug unique within its parent brand (for Modelo)."""
+    """Generate a slug unique within its parent brand (for Modelo with marca)."""
     slug = slugify(base)[:300] or 'sin-nombre'
     candidate = slug
     counter = 1
     while True:
         exists_qs = Modelo.objects.filter(marca_id=marca_id, slug=candidate)
+        if exclude_pk is not None:
+            exists_qs = exists_qs.exclude(pk=exclude_pk)
+        if not exists_qs.exists():
+            return candidate
+        candidate = f'{slug}-{counter}'
+        counter += 1
+
+
+def _unique_slug_sin_marca(base: str, subcategoria_id, exclude_pk=None) -> str:
+    """Generate a slug unique within a subcategory for brandless Modelos."""
+    slug = slugify(base)[:300] or 'sin-nombre'
+    candidate = slug
+    counter = 1
+    while True:
+        exists_qs = Modelo.objects.filter(
+            subcategoria_id=subcategoria_id, marca__isnull=True, slug=candidate
+        )
         if exclude_pk is not None:
             exists_qs = exists_qs.exclude(pk=exclude_pk)
         if not exists_qs.exists():
@@ -220,7 +237,8 @@ class Modelo(models.Model):
     )
     marca          = models.ForeignKey(
         Marca,
-        on_delete=models.CASCADE,
+        null=True, blank=True,
+        on_delete=models.SET_NULL,
         related_name='modelos',
     )
     nombre         = models.CharField(max_length=255)
@@ -242,10 +260,18 @@ class Modelo(models.Model):
         db_table = 'directorio_modelo'
         ordering = ['orden', 'nombre']
         constraints = [
+            # When brand is set: slug unique within brand
             models.UniqueConstraint(
                 fields=['marca', 'slug'],
+                condition=models.Q(marca__isnull=False),
                 name='uniq_modelo_marca_slug',
-            )
+            ),
+            # When no brand: slug unique within subcategory
+            models.UniqueConstraint(
+                fields=['subcategoria', 'slug'],
+                condition=models.Q(marca__isnull=True),
+                name='uniq_modelo_subcategoria_slug_sin_marca',
+            ),
         ]
         indexes = [
             models.Index(fields=['subcategoria', 'activo'], name='modelo_subcat_activo_idx'),
@@ -255,13 +281,19 @@ class Modelo(models.Model):
 
     def save(self, *args, **kwargs):
         if not self.slug:
-            self.slug = _unique_slug_within_marca(
-                self.nombre, self.marca_id, exclude_pk=self.pk
-            )
+            if self.marca_id:
+                self.slug = _unique_slug_within_marca(
+                    self.nombre, self.marca_id, exclude_pk=self.pk
+                )
+            else:
+                self.slug = _unique_slug_sin_marca(
+                    self.nombre, self.subcategoria_id, exclude_pk=self.pk
+                )
         super().save(*args, **kwargs)
 
     def __str__(self):
-        return f'{self.marca.nombre} / {self.nombre}'
+        marca_str = self.marca.nombre if self.marca_id else 'Sin marca'
+        return f'{marca_str} / {self.nombre}'
 
 
 # ─────────────────────────────────────────────────────────────────────────────
@@ -528,39 +560,76 @@ class Producto(models.Model):
 
 class EmpresaModelo(models.Model):
     """
-    Per-tenant record linking an EmpresaPerfil to a global Modelo.
-    `existencia` indicates whether the company currently has the model in stock.
-    Only approved models can be linked (enforced in mutations).
+    Per-tenant record linking an EmpresaPerfil to a product entry.
+    At minimum a Subcategoria is required. Marca and Modelo are optional:
+      - subcategoria only       → sells generic products in that line
+      - subcategoria + marca    → sells a brand but no specific model
+      - subcategoria + modelo   → sells a specific model (marca derived from modelo)
+    `existencia` indicates whether the item is currently in stock.
     """
-    empresa    = models.ForeignKey(
+    empresa      = models.ForeignKey(
         EmpresaPerfil,
         on_delete=models.CASCADE,
         related_name='empresa_modelos',
     )
-    modelo     = models.ForeignKey(
-        Modelo,
+    subcategoria = models.ForeignKey(
+        Subcategoria,
         on_delete=models.CASCADE,
         related_name='empresa_modelos',
     )
-    existencia = models.BooleanField(default=True)
-    created_at = models.DateTimeField(auto_now_add=True)
-    updated_at = models.DateTimeField(auto_now=True)
+    marca        = models.ForeignKey(
+        Marca,
+        null=True, blank=True,
+        on_delete=models.SET_NULL,
+        related_name='empresa_modelos',
+    )
+    modelo       = models.ForeignKey(
+        Modelo,
+        null=True, blank=True,
+        on_delete=models.SET_NULL,
+        related_name='empresa_modelos',
+    )
+    existencia   = models.BooleanField(default=True)
+    created_at   = models.DateTimeField(auto_now_add=True)
+    updated_at   = models.DateTimeField(auto_now=True)
 
     class Meta:
         db_table = 'directorio_empresa_modelo'
-        ordering = ['modelo__nombre']
+        ordering = ['subcategoria__nombre', 'marca__nombre', 'modelo__nombre']
         constraints = [
+            # modelo set + no brand override: one brandless entry per (empresa, modelo)
             models.UniqueConstraint(
                 fields=['empresa', 'modelo'],
-                name='uniq_empresa_modelo',
-            )
+                condition=models.Q(modelo__isnull=False, marca__isnull=True),
+                name='uniq_empresa_modelo_sin_marca',
+            ),
+            # modelo set + brand: one entry per (empresa, modelo, marca)
+            models.UniqueConstraint(
+                fields=['empresa', 'modelo', 'marca'],
+                condition=models.Q(modelo__isnull=False, marca__isnull=False),
+                name='uniq_empresa_modelo_con_marca',
+            ),
+            # One entry per (empresa, marca) when marca set but no modelo
+            models.UniqueConstraint(
+                fields=['empresa', 'marca'],
+                condition=models.Q(modelo__isnull=True, marca__isnull=False),
+                name='uniq_empresa_marca_sin_modelo',
+            ),
+            # One entry per (empresa, subcategoria) when only subcategoria
+            models.UniqueConstraint(
+                fields=['empresa', 'subcategoria'],
+                condition=models.Q(modelo__isnull=True, marca__isnull=True),
+                name='uniq_empresa_subcategoria_solo',
+            ),
         ]
-        verbose_name = 'Empresa → Modelo'
-        verbose_name_plural = 'Empresas → Modelos'
+        verbose_name = 'Empresa → Catálogo'
+        verbose_name_plural = 'Empresas → Catálogo'
 
     def __str__(self):
+        modelo_str = self.modelo.nombre if self.modelo_id else 'Sin modelo'
+        marca_str  = self.marca.nombre  if self.marca_id  else 'Sin marca'
         estado = 'en existencia' if self.existencia else 'sin existencia'
-        return f'{self.empresa.nombre_comercial} / {self.modelo.nombre} ({estado})'
+        return f'{self.empresa.nombre_comercial} / {self.subcategoria.nombre} / {marca_str} / {modelo_str} ({estado})'
 
 
 class NotificacionStaff(models.Model):

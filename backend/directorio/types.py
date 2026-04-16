@@ -63,7 +63,7 @@ class MarcaType:
 class ModeloType:
     id: auto
     subcategoria_id: strawberry.ID
-    marca_id: strawberry.ID
+    marca_id: Optional[strawberry.ID]
     nombre: auto
     slug: auto
     descripcion: auto
@@ -74,8 +74,8 @@ class ModeloType:
     created_at: auto
 
     @strawberry.field
-    def marca_nombre(self) -> str:
-        return self.marca.nombre
+    def marca_nombre(self) -> Optional[str]:
+        return self.marca.nombre if self.marca_id else None
 
     @strawberry.field
     def subcategoria_nombre(self) -> str:
@@ -86,18 +86,36 @@ class ModeloType:
 class EmpresaModeloType:
     id: auto
     empresa_id: strawberry.ID
-    modelo_id: strawberry.ID
+    subcategoria_id: strawberry.ID
+    marca_id: Optional[strawberry.ID]
+    modelo_id: Optional[strawberry.ID]
     existencia: auto
     created_at: auto
     updated_at: auto
 
     @strawberry.field
-    def modelo(self) -> ModeloType:
-        return self.modelo
+    def subcategoria_nombre(self) -> str:
+        return self.subcategoria.nombre
 
     @strawberry.field
-    def marca_nombre(self) -> str:
-        return self.modelo.marca.nombre
+    def marca_nombre(self) -> Optional[str]:
+        return self.marca.nombre if self.marca_id else None
+
+    @strawberry.field
+    def modelo_nombre(self) -> Optional[str]:
+        return self.modelo.nombre if self.modelo_id else None
+
+    @strawberry.field
+    def marca_status(self) -> Optional[str]:
+        return self.marca.status if self.marca_id else None
+
+    @strawberry.field
+    def modelo_status(self) -> Optional[str]:
+        return self.modelo.status if self.modelo_id else None
+
+    @strawberry.field
+    def modelo(self) -> Optional[ModeloType]:
+        return self.modelo if self.modelo_id else None
 
 
 @strawberry.type
@@ -174,8 +192,8 @@ class EmpresaPerfilType:
         return list(
             EmpresaModelo.objects
             .filter(empresa_id=self.pk)
-            .select_related('modelo__marca', 'modelo__subcategoria')
-            .order_by('modelo__nombre')
+            .select_related('subcategoria', 'marca', 'modelo__marca', 'modelo__subcategoria')
+            .order_by('subcategoria__nombre', 'marca__nombre', 'modelo__nombre')
         )
 
 
@@ -216,8 +234,8 @@ class EmpresaPerfilPublicType:
         return list(
             EmpresaModelo.objects
             .filter(empresa_id=self.pk, existencia=True)
-            .select_related('modelo__marca', 'modelo__subcategoria')
-            .order_by('modelo__nombre')
+            .select_related('subcategoria', 'marca', 'modelo__marca', 'modelo__subcategoria')
+            .order_by('subcategoria__nombre', 'marca__nombre', 'modelo__nombre')
         )
 
 
@@ -232,6 +250,12 @@ class SolicitudCotizacionType:
     status: auto
     oculto_free: auto
     created_at: auto
+
+
+@strawberry.type
+class SolicitarModeloResult:
+    modelo: Optional[ModeloType]
+    similares: List[ModeloType]
 
 
 @strawberry.type

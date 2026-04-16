@@ -18,7 +18,7 @@ from directorio.models import (
 )
 from directorio.types import (
     CategoriaType, SubcategoriaType, EmpresaPerfilType, SolicitudCotizacionType,
-    MarcaType, ModeloType, EmpresaModeloType,
+    MarcaType, ModeloType, EmpresaModeloType, SolicitarModeloResult,
 )
 from directorio.plan_limits import enforce_max, enforce_bool
 
@@ -401,42 +401,76 @@ class DirectorioMutation:
                 f'"{nombre}" en {subcategoria.nombre}'
             ),
         )
+        # Auto-link the pending brand to the proposing empresa so it shows up
+        # immediately in "Mis modelos" with a pending indicator.
+        EmpresaModelo.objects.get_or_create(
+            empresa=empresa,
+            marca=marca,
+            modelo=None,
+            defaults={'subcategoria': subcategoria, 'existencia': False},
+        )
         return marca
 
     @strawberry.mutation
     def solicitar_modelo(
         self,
         info: Info,
-        marca_id: strawberry.ID,
+        subcategoria_id: strawberry.ID,
         nombre: str,
+        marca_id: Optional[strawberry.ID] = None,
         descripcion: str = '',
-    ) -> ModeloType:
+        confirmar_duplicado: bool = False,
+    ) -> SolicitarModeloResult:
         """
-        Propose a new model under an already-approved brand.
-        Raises ValueError if the brand is not yet approved.
-        Raises ValueError if an identical name already exists under that brand.
+        Propose a new model under a subcategory.
+        marca_id is optional — omit it for brandless / generic models.
+        If provided, the brand must already be approved.
+        Raises ValueError if an identical name already exists (within brand or subcategory).
+        When similar models exist in the same subcategory, they are returned in `similares`
+        without creating a new model — unless confirmar_duplicado=True.
         """
         user = get_user_from_request(info)
         tenant = get_tenant_from_user(user)
         empresa = EmpresaPerfil.objects.get(tenant=tenant)
-        marca = Marca.objects.select_related('subcategoria').get(pk=marca_id)
 
-        if marca.status != Marca.Status.APROBADA:
-            raise ValueError(
-                'Solo puedes proponer modelos para marcas ya aprobadas. '
-                f'Esta marca está en estado "{marca.get_status_display()}".'
-            )
+        subcategoria = Subcategoria.objects.get(pk=subcategoria_id)
+        marca = None
+
+        if marca_id:
+            marca = Marca.objects.select_related('subcategoria').get(pk=marca_id)
+            if marca.status != Marca.Status.APROBADA:
+                raise ValueError(
+                    'Solo puedes proponer modelos para marcas ya aprobadas. '
+                    f'Esta marca está en estado "{marca.get_status_display()}".'
+                )
+            # Derive subcategoria from the brand
+            subcategoria = marca.subcategoria
 
         if Modelo.objects.filter(
+            subcategoria=subcategoria,
             marca=marca,
             nombre__iexact=nombre.strip(),
         ).exists():
-            raise ValueError(
-                f'Ya existe un modelo con el nombre "{nombre}" en esa marca.'
+            scope = f'en la marca "{marca.nombre}"' if marca else f'en la subcategoría "{subcategoria.nombre}"'
+            raise ValueError(f'Ya existe un modelo con el nombre "{nombre}" {scope}.')
+
+        # Check for similar models in the same subcategory (different brand or no brand)
+        # Only warn if not already confirmed by the user.
+        if not confirmar_duplicado:
+            similares = list(
+                Modelo.objects.filter(
+                    subcategoria=subcategoria,
+                    nombre__icontains=nombre.strip(),
+                )
+                .exclude(marca=marca)
+                .select_related('subcategoria', 'marca')[:5]
             )
+            if similares:
+                # Return similares without creating the model — the frontend must confirm
+                return SolicitarModeloResult(modelo=None, similares=similares)
 
         modelo = Modelo.objects.create(
-            subcategoria=marca.subcategoria,
+            subcategoria=subcategoria,
             marca=marca,
             nombre=nombre.strip(),
             descripcion=descripcion,
@@ -446,58 +480,96 @@ class DirectorioMutation:
             tipo=NotificacionStaff.Tipo.MODELO_NUEVO,
             referencia_id=modelo.pk,
             mensaje=(
-                f'{empresa.nombre_comercial} propuso el modelo '
-                f'"{nombre}" (marca {marca.nombre})'
+                f'{empresa.nombre_comercial} propuso el modelo "{nombre}"'
+                + (f' (marca {marca.nombre})' if marca else f' (subcategoría {subcategoria.nombre})')
             ),
         )
-        return modelo
+        # Auto-link the pending model to the proposing empresa so it shows up
+        # immediately in "Mis modelos" with a pending indicator.
+        EmpresaModelo.objects.get_or_create(
+            empresa=empresa,
+            modelo=modelo,
+            defaults={'subcategoria': subcategoria, 'marca': marca, 'existencia': False},
+        )
+        return SolicitarModeloResult(modelo=modelo, similares=[])
 
     @strawberry.mutation
     def agregar_empresa_modelo(
         self,
         info: Info,
-        modelo_id: strawberry.ID,
+        subcategoria_id: strawberry.ID,
+        marca_id: Optional[strawberry.ID] = None,
+        modelo_id: Optional[strawberry.ID] = None,
         existencia: bool = True,
     ) -> EmpresaModeloType:
         """
-        Link an approved Modelo to the authenticated tenant's company profile.
-        Raises ValueError if the model is not approved or already linked.
+        Link a product entry to the tenant's company.
+        At minimum a subcategoria is required; marca and modelo are optional.
+          - subcategoria only    → sells generic products in that line
+          - subcategoria + marca → sells a brand (no specific model)
+          - + modelo             → sells a specific approved model
         """
         user = get_user_from_request(info)
         tenant = get_tenant_from_user(user)
         empresa = EmpresaPerfil.objects.get(tenant=tenant)
-        modelo = Modelo.objects.select_related('marca', 'subcategoria').get(pk=modelo_id)
 
-        if modelo.status != Modelo.Status.APROBADO:
-            raise ValueError(
-                'Solo puedes vincular modelos aprobados. '
-                f'Este modelo está en estado "{modelo.get_status_display()}".'
-            )
+        subcategoria = Subcategoria.objects.get(pk=subcategoria_id)
+        marca  = None
+        modelo = None
 
-        # Enforce per-subcategoria plan limit
-        current = EmpresaModelo.objects.filter(
+        if modelo_id:
+            modelo = Modelo.objects.select_related('marca', 'subcategoria').get(pk=modelo_id)
+            if modelo.status != Modelo.Status.APROBADO:
+                raise ValueError(
+                    'Solo puedes vincular modelos aprobados. '
+                    f'Este modelo está en estado "{modelo.get_status_display()}".'
+                )
+            subcategoria = modelo.subcategoria
+            # Use explicitly supplied marca_id if present; fall back to the model's own brand.
+            if marca_id:
+                marca = Marca.objects.select_related('subcategoria').get(pk=marca_id)
+            else:
+                marca = modelo.marca  # inherit from modelo (may be None)
+
+            if EmpresaModelo.objects.filter(empresa=empresa, modelo=modelo, marca=marca).exists():
+                raise ValueError('Este modelo ya está vinculado a tu empresa.')
+
+            # Enforce per-subcategoria plan limit
+            current = EmpresaModelo.objects.filter(
+                empresa=empresa, subcategoria=subcategoria
+            ).count()
+            from directorio.plan_limits import enforce_max
+            enforce_max(empresa, 'max_modelos_por_subcategoria', current,
+                        f'entradas en "{subcategoria.nombre}"')
+
+        elif marca_id:
+            marca = Marca.objects.select_related('subcategoria').get(pk=marca_id)
+            if marca.status != Marca.Status.APROBADA:
+                raise ValueError(
+                    'Solo puedes vincular marcas aprobadas. '
+                    f'Esta marca está en estado "{marca.get_status_display()}".'
+                )
+            subcategoria = marca.subcategoria
+
+            if EmpresaModelo.objects.filter(
+                empresa=empresa, marca=marca, modelo__isnull=True
+            ).exists():
+                raise ValueError('Esta marca ya está vinculada a tu empresa sin modelo específico.')
+
+        else:
+            if EmpresaModelo.objects.filter(
+                empresa=empresa, subcategoria=subcategoria,
+                marca__isnull=True, modelo__isnull=True
+            ).exists():
+                raise ValueError('Esta subcategoría ya está vinculada a tu empresa.')
+
+        return EmpresaModelo.objects.create(
             empresa=empresa,
-            modelo__subcategoria=modelo.subcategoria,
-        ).count()
-        from directorio.plan_limits import enforce_max
-        enforce_max(
-            empresa,
-            'max_modelos_por_subcategoria',
-            current,
-            f'modelos en "{modelo.subcategoria.nombre}"',
-        )
-
-        em, created = EmpresaModelo.objects.get_or_create(
-            empresa=empresa,
+            subcategoria=subcategoria,
+            marca=marca,
             modelo=modelo,
-            defaults={'existencia': existencia},
+            existencia=existencia,
         )
-        if not created:
-            raise ValueError(
-                'Este modelo ya está vinculado a tu empresa. '
-                'Usa actualizarEmpresaModelo para cambiar la existencia.'
-            )
-        return em
 
     @strawberry.mutation
     def actualizar_empresa_modelo(
@@ -511,7 +583,7 @@ class DirectorioMutation:
         tenant = get_tenant_from_user(user)
         empresa = EmpresaPerfil.objects.get(tenant=tenant)
         em = EmpresaModelo.objects.select_related(
-            'modelo__marca', 'modelo__subcategoria'
+            'subcategoria', 'marca', 'modelo__marca', 'modelo__subcategoria'
         ).get(pk=empresa_modelo_id, empresa=empresa)
         em.existencia = existencia
         em.save(update_fields=['existencia', 'updated_at'])
