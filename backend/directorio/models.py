@@ -40,6 +40,36 @@ def _unique_slug_within_category(base: str, categoria_id, exclude_pk=None) -> st
         counter += 1
 
 
+def _unique_slug_within_subcategoria_marca(base: str, subcategoria_id, exclude_pk=None) -> str:
+    """Generate a slug unique within its parent subcategory (for Marca)."""
+    slug = slugify(base)[:300] or 'sin-nombre'
+    candidate = slug
+    counter = 1
+    while True:
+        exists_qs = Marca.objects.filter(subcategoria_id=subcategoria_id, slug=candidate)
+        if exclude_pk is not None:
+            exists_qs = exists_qs.exclude(pk=exclude_pk)
+        if not exists_qs.exists():
+            return candidate
+        candidate = f'{slug}-{counter}'
+        counter += 1
+
+
+def _unique_slug_within_marca(base: str, marca_id, exclude_pk=None) -> str:
+    """Generate a slug unique within its parent brand (for Modelo)."""
+    slug = slugify(base)[:300] or 'sin-nombre'
+    candidate = slug
+    counter = 1
+    while True:
+        exists_qs = Modelo.objects.filter(marca_id=marca_id, slug=candidate)
+        if exclude_pk is not None:
+            exists_qs = exists_qs.exclude(pk=exclude_pk)
+        if not exists_qs.exists():
+            return candidate
+        candidate = f'{slug}-{counter}'
+        counter += 1
+
+
 # ─────────────────────────────────────────────────────────────────────────────
 # Global taxonomy — no tenant FK
 # ─────────────────────────────────────────────────────────────────────────────
@@ -113,6 +143,125 @@ class Subcategoria(models.Model):
 
     def __str__(self):
         return f'{self.categoria.nombre} / {self.nombre}'
+
+
+class Marca(models.Model):
+    """
+    A product brand, scoped to a Subcategoria.
+    Global (no tenant FK) — proposed by tenants, approved by staff.
+    Slug is unique within its parent subcategory.
+    """
+
+    class Status(models.TextChoices):
+        PENDIENTE = 'pendiente', 'Pendiente de revisión'
+        APROBADA  = 'aprobada',  'Aprobada'
+        RECHAZADA = 'rechazada', 'Rechazada'
+
+    subcategoria   = models.ForeignKey(
+        Subcategoria,
+        on_delete=models.CASCADE,
+        related_name='marcas',
+    )
+    nombre         = models.CharField(max_length=255)
+    slug           = models.SlugField(max_length=270)
+    descripcion    = models.TextField(blank=True)
+    activa         = models.BooleanField(default=False)   # True only once approved
+    status         = models.CharField(max_length=20, choices=Status.choices, default=Status.PENDIENTE)
+    motivo_rechazo = models.TextField(blank=True)
+    creada_por     = models.ForeignKey(
+        'EmpresaPerfil',
+        null=True, blank=True,
+        on_delete=models.SET_NULL,
+        related_name='marcas_propuestas',
+    )
+    orden          = models.IntegerField(default=0)
+    created_at     = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        db_table = 'directorio_marca'
+        ordering = ['orden', 'nombre']
+        constraints = [
+            models.UniqueConstraint(
+                fields=['subcategoria', 'slug'],
+                name='uniq_marca_subcategoria_slug',
+            )
+        ]
+        verbose_name = 'Marca'
+        verbose_name_plural = 'Marcas'
+
+    def save(self, *args, **kwargs):
+        if not self.slug:
+            self.slug = _unique_slug_within_subcategoria_marca(
+                self.nombre, self.subcategoria_id, exclude_pk=self.pk
+            )
+        super().save(*args, **kwargs)
+
+    def __str__(self):
+        return f'{self.subcategoria.nombre} / {self.nombre}'
+
+
+class Modelo(models.Model):
+    """
+    A specific product model, scoped to a Subcategoria + Marca.
+    Global (no tenant FK) — proposed by tenants, approved by staff.
+    subcategoria is denormalized from marca.subcategoria for efficient queries.
+    Slug is unique within its parent brand.
+    """
+
+    class Status(models.TextChoices):
+        PENDIENTE = 'pendiente', 'Pendiente de revisión'
+        APROBADO  = 'aprobado',  'Aprobado'
+        RECHAZADO = 'rechazado', 'Rechazado'
+
+    subcategoria   = models.ForeignKey(
+        Subcategoria,
+        on_delete=models.CASCADE,
+        related_name='modelos',
+    )
+    marca          = models.ForeignKey(
+        Marca,
+        on_delete=models.CASCADE,
+        related_name='modelos',
+    )
+    nombre         = models.CharField(max_length=255)
+    slug           = models.SlugField(max_length=270)
+    descripcion    = models.TextField(blank=True)
+    activo         = models.BooleanField(default=False)   # True only once approved
+    status         = models.CharField(max_length=20, choices=Status.choices, default=Status.PENDIENTE)
+    motivo_rechazo = models.TextField(blank=True)
+    creada_por     = models.ForeignKey(
+        'EmpresaPerfil',
+        null=True, blank=True,
+        on_delete=models.SET_NULL,
+        related_name='modelos_propuestos',
+    )
+    orden          = models.IntegerField(default=0)
+    created_at     = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        db_table = 'directorio_modelo'
+        ordering = ['orden', 'nombre']
+        constraints = [
+            models.UniqueConstraint(
+                fields=['marca', 'slug'],
+                name='uniq_modelo_marca_slug',
+            )
+        ]
+        indexes = [
+            models.Index(fields=['subcategoria', 'activo'], name='modelo_subcat_activo_idx'),
+        ]
+        verbose_name = 'Modelo'
+        verbose_name_plural = 'Modelos'
+
+    def save(self, *args, **kwargs):
+        if not self.slug:
+            self.slug = _unique_slug_within_marca(
+                self.nombre, self.marca_id, exclude_pk=self.pk
+            )
+        super().save(*args, **kwargs)
+
+    def __str__(self):
+        return f'{self.marca.nombre} / {self.nombre}'
 
 
 # ─────────────────────────────────────────────────────────────────────────────
@@ -209,6 +358,20 @@ class EmpresaPerfil(models.Model):
     # Quality signals
     score_completitud   = models.IntegerField(default=0)
     verified            = models.BooleanField(default=False)
+
+    # Verification via Constancia de Situación Fiscal (CSF)
+    class CsfStatus(models.TextChoices):
+        SIN_ENVIAR = 'sin_enviar', 'Sin enviar'
+        PENDIENTE  = 'pendiente',  'En revisión'
+        APROBADO   = 'aprobado',   'Aprobado'
+        RECHAZADO  = 'rechazado',  'Rechazado'
+
+    csf_documento = models.FileField(upload_to='csf/', null=True, blank=True)
+    csf_status    = models.CharField(
+        max_length=20,
+        choices=CsfStatus.choices,
+        default=CsfStatus.SIN_ENVIAR,
+    )
 
     # Timestamps
     created_at          = models.DateTimeField(auto_now_add=True)
@@ -331,3 +494,98 @@ class InvitacionEmpresa(models.Model):
 
     def __str__(self):
         return f'Invitación → {self.empresa.nombre_comercial} ({self.token})'
+
+
+class Producto(models.Model):
+    """
+    A product or service offered by a company.
+    Multiple products per EmpresaPerfil.
+    """
+    empresa     = models.ForeignKey(
+        EmpresaPerfil,
+        on_delete=models.CASCADE,
+        related_name='productos',
+    )
+    nombre      = models.CharField(max_length=255)
+    descripcion = models.TextField(blank=True)
+    precio      = models.DecimalField(max_digits=12, decimal_places=2, null=True, blank=True)
+    unidad      = models.CharField(max_length=50, blank=True)   # 'kg', 'ton', 'pieza', 'servicio'
+    imagen      = models.ImageField(upload_to='productos/', null=True, blank=True)
+    activo      = models.BooleanField(default=True)
+    orden       = models.IntegerField(default=0)
+    created_at  = models.DateTimeField(auto_now_add=True)
+    updated_at  = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        db_table = 'directorio_producto'
+        ordering = ['orden', 'nombre']
+        verbose_name = 'Producto / Servicio'
+        verbose_name_plural = 'Productos / Servicios'
+
+    def __str__(self):
+        return f'{self.empresa.nombre_comercial} / {self.nombre}'
+
+
+class EmpresaModelo(models.Model):
+    """
+    Per-tenant record linking an EmpresaPerfil to a global Modelo.
+    `existencia` indicates whether the company currently has the model in stock.
+    Only approved models can be linked (enforced in mutations).
+    """
+    empresa    = models.ForeignKey(
+        EmpresaPerfil,
+        on_delete=models.CASCADE,
+        related_name='empresa_modelos',
+    )
+    modelo     = models.ForeignKey(
+        Modelo,
+        on_delete=models.CASCADE,
+        related_name='empresa_modelos',
+    )
+    existencia = models.BooleanField(default=True)
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        db_table = 'directorio_empresa_modelo'
+        ordering = ['modelo__nombre']
+        constraints = [
+            models.UniqueConstraint(
+                fields=['empresa', 'modelo'],
+                name='uniq_empresa_modelo',
+            )
+        ]
+        verbose_name = 'Empresa → Modelo'
+        verbose_name_plural = 'Empresas → Modelos'
+
+    def __str__(self):
+        estado = 'en existencia' if self.existencia else 'sin existencia'
+        return f'{self.empresa.nombre_comercial} / {self.modelo.nombre} ({estado})'
+
+
+class NotificacionStaff(models.Model):
+    """
+    Global staff inbox notification.
+    Created automatically when a tenant submits a Marca or Modelo for approval.
+    All staff roles share the same inbox (no per-user routing).
+    """
+
+    class Tipo(models.TextChoices):
+        MARCA_NUEVA  = 'marca_nueva',  'Nueva marca propuesta'
+        MODELO_NUEVO = 'modelo_nuevo', 'Nuevo modelo propuesto'
+
+    tipo          = models.CharField(max_length=30, choices=Tipo.choices)
+    referencia_id = models.IntegerField()           # pk of Marca or Modelo
+    mensaje       = models.CharField(max_length=400)
+    leida         = models.BooleanField(default=False)
+    created_at    = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        db_table = 'directorio_notificacion_staff'
+        ordering = ['-created_at']
+        verbose_name = 'Notificación Staff'
+        verbose_name_plural = 'Notificaciones Staff'
+
+    def __str__(self):
+        estado = 'leída' if self.leida else 'no leída'
+        return f'[{self.tipo}] ref={self.referencia_id} ({estado})'

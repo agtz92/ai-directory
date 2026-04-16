@@ -10,10 +10,13 @@ from datetime import datetime, timezone, timedelta
 import strawberry
 from strawberry.types import Info
 
-from directorio.models import Categoria, Subcategoria, EmpresaPerfil, SolicitudCotizacion, InvitacionEmpresa
+from directorio.models import (
+    Categoria, Subcategoria, EmpresaPerfil, SolicitudCotizacion,
+    InvitacionEmpresa, Marca, Modelo,
+)
 from directorio.types import (
     CategoriaType, SubcategoriaType, EmpresaPerfilPublicType,
-    DirectorioResultType,
+    DirectorioResultType, MarcaType, ModeloType,
 )
 from directorio.plan_limits import PlanInfoType, build_all_plans  # noqa: F401
 
@@ -68,7 +71,14 @@ class PublicQuery:
         if estado:
             qs = qs.filter(estado__icontains=estado)
         if search:
-            qs = qs.filter(nombre_comercial__icontains=search)
+            from django.db.models import Q
+            qs = qs.filter(
+                Q(nombre_comercial__icontains=search) |
+                Q(descripcion__icontains=search) |
+                Q(categorias__nombre__icontains=search) |
+                Q(subcategorias__nombre__icontains=search) |
+                Q(subcategorias__keywords__icontains=search)
+            )
 
         qs = qs.annotate(
             plan_rank=Case(
@@ -116,6 +126,34 @@ class PublicQuery:
             .filter(categoria__slug=categoria_slug)
             .order_by('orden', 'nombre')
         )
+
+    @strawberry.field
+    def marcas(self, info: Info, subcategoria_slug: str) -> List[MarcaType]:
+        """Returns all approved brands for a given subcategory slug."""
+        return list(
+            Marca.objects
+            .filter(subcategoria__slug=subcategoria_slug, status='aprobada')
+            .select_related('subcategoria')
+            .order_by('orden', 'nombre')
+        )
+
+    @strawberry.field
+    def modelos(
+        self,
+        info: Info,
+        subcategoria_slug: str,
+        marca_id: Optional[strawberry.ID] = None,
+    ) -> List[ModeloType]:
+        """Returns all approved models for a subcategory, optionally filtered by brand."""
+        qs = (
+            Modelo.objects
+            .filter(subcategoria__slug=subcategoria_slug, status='aprobado')
+            .select_related('marca', 'subcategoria')
+            .order_by('orden', 'nombre')
+        )
+        if marca_id is not None:
+            qs = qs.filter(marca_id=marca_id)
+        return list(qs)
 
     @strawberry.field
     def invitacion(self, info: Info, token: str) -> Optional[InvitacionInfoType]:

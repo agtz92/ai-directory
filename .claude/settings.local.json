@@ -27,7 +27,24 @@
       "Bash(rm -rf node_modules package-lock.json)",
       "Bash(pnpm install:*)",
       "Bash(pnpm remove:*)",
-      "Bash(python -c ':*)"
+      "Bash(python -c ':*)",
+      "Bash(..\\\\venv\\\\Scripts\\\\python.exe manage.py makemigrations users --name=\"add_staff_role\")",
+      "Read(//mnt/c/GitHub/directorio-ai/**)",
+      "Bash(../venv/Scripts/python.exe manage.py makemigrations users --name=\"add_staff_role\")",
+      "Bash(dir \"C:\\\\GitHub\\\\directorio-ai\\\\staff-panel\")",
+      "Bash(dir \"C:\\\\GitHub\\\\directorio-ai\\\\backend\")",
+      "Bash(dir \"C:\\\\GitHub\\\\directorio-ai\\\\staff-panel\" /s /b)",
+      "Bash(/c/GitHub/directorio-ai/backend/venv/Scripts/python.exe manage.py makemigrations users --name=\"add_staff_role\")",
+      "Bash(python manage.py makemigrations users --name=\"add_staff_role\")",
+      "Bash(pip show:*)",
+      "Bash(/c/GitHub/directorio-ai/venv/Scripts/python.exe manage.py makemigrations users --name=\"add_staff_role\")",
+      "Bash(/c/GitHub/directorio-ai/venv/Scripts/python.exe manage.py migrate)",
+      "Bash(pnpm run:*)",
+      "Bash(ls C:/GitHub/directorio-ai/website/.env*)",
+      "Bash(xargs grep:*)",
+      "Bash(find /c/GitHub/directorio-ai/backend -type f -name \"*.py\" -exec grep -l \"Producto\\\\|Product\" {} \\\\;)",
+      "Bash(/c/GitHub/directorio-ai/venv/Scripts/python.exe manage.py makemigrations directorio --name=\"add_producto_model\")",
+      "Bash(/c/GitHub/directorio-ai/venv/Scripts/python.exe manage.py shell -c ':*)"
     ]
   }
 }

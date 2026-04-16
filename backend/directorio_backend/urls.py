@@ -8,11 +8,7 @@ from strawberry.django.views import GraphQLView
 
 from directorio_backend.schema import schema
 from directorio.public_schema import public_schema
-
-
-# Public schema view — no auth, serves the global directory
-class PublicDirectorioView(GraphQLView):
-    schema = public_schema
+from directorio.staff_schema import staff_schema
 
 
 urlpatterns = [
@@ -22,7 +18,10 @@ urlpatterns = [
     path('graphql/', csrf_exempt(GraphQLView.as_view(schema=schema))),
 
     # Public directory schema (no auth — all published companies)
-    path('public/graphql/', csrf_exempt(PublicDirectorioView.as_view())),
+    path('public/graphql/', csrf_exempt(GraphQLView.as_view(schema=public_schema))),
+
+    # Staff support panel (requires JWT + staff_role != '')
+    path('staff/graphql/', csrf_exempt(GraphQLView.as_view(schema=staff_schema))),
 ]
 
 # Serve local media files in development

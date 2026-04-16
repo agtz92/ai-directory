@@ -5,10 +5,12 @@ import strawberry
 from strawberry.types import Info
 
 from users.auth import get_user_from_request, get_tenant_from_user
-from directorio.models import Categoria, Subcategoria, EmpresaPerfil, SolicitudCotizacion
+from directorio.models import (
+    Categoria, Subcategoria, EmpresaPerfil, SolicitudCotizacion, Marca, Modelo,
+)
 from directorio.types import (
     CategoriaType, SubcategoriaType, EmpresaPerfilType,
-    SolicitudCotizacionType, DashboardStats,
+    SolicitudCotizacionType, DashboardStats, MarcaType, ModeloType,
 )
 
 
@@ -105,6 +107,72 @@ class DirectorioQuery:
                 s.mensaje = ''
                 s.email_contacto = ''
         return solicitudes
+
+    @strawberry.field
+    def mis_marcas_propuestas(self, info: Info) -> List[MarcaType]:
+        """Returns all brands proposed by the authenticated tenant (any status)."""
+        user = get_user_from_request(info)
+        tenant = get_tenant_from_user(user)
+        try:
+            empresa = EmpresaPerfil.objects.get(tenant=tenant)
+        except EmpresaPerfil.DoesNotExist:
+            return []
+        return list(
+            Marca.objects
+            .filter(creada_por=empresa)
+            .select_related('subcategoria')
+            .order_by('-created_at')
+        )
+
+    @strawberry.field
+    def mis_modelos_propuestos(self, info: Info) -> List[ModeloType]:
+        """Returns all models proposed by the authenticated tenant (any status)."""
+        user = get_user_from_request(info)
+        tenant = get_tenant_from_user(user)
+        try:
+            empresa = EmpresaPerfil.objects.get(tenant=tenant)
+        except EmpresaPerfil.DoesNotExist:
+            return []
+        return list(
+            Modelo.objects
+            .filter(creada_por=empresa)
+            .select_related('marca__subcategoria', 'subcategoria')
+            .order_by('-created_at')
+        )
+
+    @strawberry.field
+    def marcas(
+        self,
+        info: Info,
+        subcategoria_slug: str,
+    ) -> List[MarcaType]:
+        """Returns approved brands for a given subcategory slug."""
+        get_user_from_request(info)
+        return list(
+            Marca.objects
+            .filter(subcategoria__slug=subcategoria_slug, status='aprobada')
+            .select_related('subcategoria')
+            .order_by('orden', 'nombre')
+        )
+
+    @strawberry.field
+    def modelos(
+        self,
+        info: Info,
+        subcategoria_slug: str,
+        marca_id: Optional[strawberry.ID] = None,
+    ) -> List[ModeloType]:
+        """Returns approved models for a given subcategory slug, optionally filtered by brand."""
+        get_user_from_request(info)
+        qs = (
+            Modelo.objects
+            .filter(subcategoria__slug=subcategoria_slug, status='aprobado')
+            .select_related('marca', 'subcategoria')
+            .order_by('orden', 'nombre')
+        )
+        if marca_id is not None:
+            qs = qs.filter(marca_id=marca_id)
+        return list(qs)
 
     @strawberry.field
     def dashboard_stats(self, info: Info) -> DashboardStats:

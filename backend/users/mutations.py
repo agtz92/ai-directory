@@ -35,6 +35,7 @@ class MeType:
     empresa_plan: str          # 'free' | 'starter' | 'pro' | 'enterprise'
     empresa_status: str        # 'draft' | 'published' | 'archived'
     plan_limits: PlanLimitsType  # authoritative limits for the current plan
+    staff_role: str            # '' | 'staff' | 'admin' | 'owner'
 
 
 def _build_me(user: CustomUser) -> MeType:
@@ -75,6 +76,7 @@ def _build_me(user: CustomUser) -> MeType:
         empresa_plan=empresa_plan,
         empresa_status=empresa_status,
         plan_limits=build_plan_limits(empresa_plan),
+        staff_role=user.staff_role,
     )
 
 

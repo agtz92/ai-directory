@@ -18,40 +18,44 @@ _UNLIMITED = 999
 
 _LIMITS: dict[str, dict[str, Any]] = {
     'free': {
-        'max_categorias':      1,       # how many categories the empresa can be listed under
-        'max_subcategorias':   15,       # how many subcategories
-        'puede_ver_leads':     False,   # can read lead content (nombre, email, mensaje)
-        'puede_subir_portada': False,   # can upload a cover/banner image
-        'max_fotos_galeria':   0,       # gallery photos (Phase 2)
-        'badge_verificado':    False,   # shows "Verified" badge on public profile
-        'soporte':             'comunidad',
+        'max_categorias':               _UNLIMITED,  # how many categories the empresa can be listed under
+        'max_subcategorias':            3,            # how many subcategories
+        'max_modelos_por_subcategoria': 2,            # max linked models per subcategory
+        'puede_ver_leads':              False,        # can read lead content (nombre, email, mensaje)
+        'puede_subir_portada':          False,        # can upload a cover/banner image
+        'max_fotos_galeria':            0,            # gallery photos (Phase 2)
+        'badge_verificado':             False,        # shows "Verified" badge on public profile
+        'soporte':                      'comunidad',
     },
     'starter': {
-        'max_categorias':      3,
-        'max_subcategorias':   15,
-        'puede_ver_leads':     True,
-        'puede_subir_portada': True,
-        'max_fotos_galeria':   5,
-        'badge_verificado':    False,
-        'soporte':             'email',
+        'max_categorias':               _UNLIMITED,
+        'max_subcategorias':            5,
+        'max_modelos_por_subcategoria': 5,
+        'puede_ver_leads':              True,
+        'puede_subir_portada':          True,
+        'max_fotos_galeria':            5,
+        'badge_verificado':             True,
+        'soporte':                      'email',
     },
     'pro': {
-        'max_categorias':      _UNLIMITED,
-        'max_subcategorias':   _UNLIMITED,
-        'puede_ver_leads':     True,
-        'puede_subir_portada': True,
-        'max_fotos_galeria':   20,
-        'badge_verificado':    True,
-        'soporte':             'prioritario',
+        'max_categorias':               _UNLIMITED,
+        'max_subcategorias':            _UNLIMITED,
+        'max_modelos_por_subcategoria': _UNLIMITED,
+        'puede_ver_leads':              True,
+        'puede_subir_portada':          True,
+        'max_fotos_galeria':            20,
+        'badge_verificado':             True,
+        'soporte':                      'prioritario',
     },
     'enterprise': {
-        'max_categorias':      _UNLIMITED,
-        'max_subcategorias':   _UNLIMITED,
-        'puede_ver_leads':     True,
-        'puede_subir_portada': True,
-        'max_fotos_galeria':   _UNLIMITED,
-        'badge_verificado':    True,
-        'soporte':             'dedicado',
+        'max_categorias':               _UNLIMITED,
+        'max_subcategorias':            _UNLIMITED,
+        'max_modelos_por_subcategoria': _UNLIMITED,
+        'puede_ver_leads':              True,
+        'puede_subir_portada':          True,
+        'max_fotos_galeria':            _UNLIMITED,
+        'badge_verificado':             True,
+        'soporte':                      'dedicado',
     },
 }
 
@@ -74,7 +78,7 @@ def get_limits(plan: str) -> dict[str, Any]:
 
 def enforce_max(empresa, feature: str, current_count: int, label: str = '') -> None:
     """
-    Raise ValueError if current_count is AT or ABOVE the plan max for `feature`.
+    Raise ValueError if current_count EXCEEDS the plan max for `feature`.
     `feature` must be a key in _LIMITS holding an int.
 
     Example:
@@ -82,7 +86,7 @@ def enforce_max(empresa, feature: str, current_count: int, label: str = '') -> N
     """
     limits = get_limits(empresa.plan)
     max_val: int = limits.get(feature, 0)
-    if max_val < _UNLIMITED and current_count >= max_val:
+    if max_val < _UNLIMITED and current_count > max_val:
         label = label or feature
         raise ValueError(
             f'Tu plan "{empresa.plan}" permite hasta {max_val} {label}. '
@@ -112,13 +116,14 @@ def enforce_bool(empresa, feature: str, label: str = '') -> None:
 class PlanLimitsType:
     """Current plan's limits. Returned inside MeType so the frontend has
     the authoritative constraints without hardcoding them."""
-    max_categorias:      int
-    max_subcategorias:   int
-    puede_ver_leads:     bool
-    puede_subir_portada: bool
-    max_fotos_galeria:   int
-    badge_verificado:    bool
-    soporte:             str
+    max_categorias:               int
+    max_subcategorias:            int
+    max_modelos_por_subcategoria: int
+    puede_ver_leads:              bool
+    puede_subir_portada:          bool
+    max_fotos_galeria:            int
+    badge_verificado:             bool
+    soporte:                      str
 
 
 @strawberry.type
@@ -136,6 +141,7 @@ def build_plan_limits(plan: str) -> PlanLimitsType:
     return PlanLimitsType(
         max_categorias=d['max_categorias'],
         max_subcategorias=d['max_subcategorias'],
+        max_modelos_por_subcategoria=d['max_modelos_por_subcategoria'],
         puede_ver_leads=d['puede_ver_leads'],
         puede_subir_portada=d['puede_subir_portada'],
         max_fotos_galeria=d['max_fotos_galeria'],

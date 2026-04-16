@@ -14,10 +14,11 @@ from django.utils.text import slugify
 from users.auth import get_user_from_request, get_tenant_from_user
 from directorio.models import (
     Categoria, Subcategoria, EmpresaPerfil, SolicitudCotizacion,
-    _unique_slug,
+    _unique_slug, Marca, Modelo, EmpresaModelo, NotificacionStaff,
 )
 from directorio.types import (
     CategoriaType, SubcategoriaType, EmpresaPerfilType, SolicitudCotizacionType,
+    MarcaType, ModeloType, EmpresaModeloType,
 )
 from directorio.plan_limits import enforce_max, enforce_bool
 
@@ -198,7 +199,12 @@ class DirectorioMutation:
         empresa.save()
 
         if subcategoria_ids is not strawberry.UNSET and subcategoria_ids is not None:
-            enforce_max(empresa, 'max_subcategorias', len(subcategoria_ids), 'subcategorías')
+            new_count = len(subcategoria_ids)
+            current_count = empresa.subcategorias.count()
+            # Only block if the user is ADDING beyond the plan limit.
+            # Always allow reductions (even when currently over-limit after a downgrade).
+            if new_count > current_count:
+                enforce_max(empresa, 'max_subcategorias', new_count, 'subcategorías')
             subs = list(
                 Subcategoria.objects
                 .filter(pk__in=subcategoria_ids)
@@ -228,6 +234,29 @@ class DirectorioMutation:
             empresa.logo.delete(save=False)
         empresa.logo.save(file.name, file, save=True)
         return empresa
+
+    @strawberry.mutation
+    def subir_csf(self, info: Info, file: Upload) -> EmpresaPerfilType:
+        """
+        Upload a Constancia de Situación Fiscal for verification.
+        Available from Starter plan onwards (badge_verificado limit).
+        Sets csf_status = 'pendiente' for admin review.
+        """
+        user = get_user_from_request(info)
+        tenant = get_tenant_from_user(user)
+        empresa = EmpresaPerfil.objects.get(tenant=tenant)
+        enforce_bool(empresa, 'badge_verificado', 'verificación de empresa')
+        if empresa.csf_documento:
+            empresa.csf_documento.delete(save=False)
+        empresa.csf_documento.save(file.name, file, save=False)
+        empresa.csf_status = EmpresaPerfil.CsfStatus.PENDIENTE
+        empresa.save(update_fields=['csf_documento', 'csf_status'])
+        return (
+            EmpresaPerfil.objects
+            .prefetch_related('categorias', 'subcategorias')
+            .select_related('categoria_principal')
+            .get(pk=empresa.pk)
+        )
 
     @strawberry.mutation
     def subir_portada(self, info: Info, file: Upload) -> EmpresaPerfilType:
@@ -267,6 +296,24 @@ class DirectorioMutation:
         empresa.status = EmpresaPerfil.Status.ARCHIVED
         empresa.save(update_fields=['status'])
         return empresa
+
+    @strawberry.mutation
+    def cambiar_plan(self, info: Info, plan: str) -> MeType:
+        """
+        Change the empresa's plan immediately.
+        No payment gate here — add Stripe/paywall before this in production.
+        Returns MeType so the frontend can refresh planLimits in the auth store.
+        """
+        user = get_user_from_request(info)
+        tenant = get_tenant_from_user(user)
+        empresa = EmpresaPerfil.objects.get(tenant=tenant)
+        if plan not in EmpresaPerfil.Plan.values:
+            raise ValueError(
+                f'Plan "{plan}" no válido. Opciones: {", ".join(EmpresaPerfil.Plan.values)}'
+            )
+        empresa.plan = plan
+        empresa.save(update_fields=['plan'])
+        return _build_me(user)
 
     # ── Claim mutations ───────────────────────────────────────────────────
 
@@ -311,6 +358,180 @@ class DirectorioMutation:
         inv.save(update_fields=['used_at', 'used_by'])
 
         return _build_me(user)
+
+    # ── Marca / Modelo (tenant proposals) ────────────────────────────────
+
+    @strawberry.mutation
+    def solicitar_marca(
+        self,
+        info: Info,
+        subcategoria_id: strawberry.ID,
+        nombre: str,
+        descripcion: str = '',
+    ) -> MarcaType:
+        """
+        Propose a new brand under a subcategory.
+        Creates with status='pendiente'; staff must approve before it becomes visible.
+        Raises ValueError if an identical name already exists in that subcategory.
+        """
+        user = get_user_from_request(info)
+        tenant = get_tenant_from_user(user)
+        empresa = EmpresaPerfil.objects.get(tenant=tenant)
+        subcategoria = Subcategoria.objects.select_related('categoria').get(pk=subcategoria_id)
+
+        if Marca.objects.filter(
+            subcategoria=subcategoria,
+            nombre__iexact=nombre.strip(),
+        ).exists():
+            raise ValueError(
+                f'Ya existe una marca con el nombre "{nombre}" en esa subcategoría.'
+            )
+
+        marca = Marca.objects.create(
+            subcategoria=subcategoria,
+            nombre=nombre.strip(),
+            descripcion=descripcion,
+            creada_por=empresa,
+        )
+        NotificacionStaff.objects.create(
+            tipo=NotificacionStaff.Tipo.MARCA_NUEVA,
+            referencia_id=marca.pk,
+            mensaje=(
+                f'{empresa.nombre_comercial} propuso la marca '
+                f'"{nombre}" en {subcategoria.nombre}'
+            ),
+        )
+        return marca
+
+    @strawberry.mutation
+    def solicitar_modelo(
+        self,
+        info: Info,
+        marca_id: strawberry.ID,
+        nombre: str,
+        descripcion: str = '',
+    ) -> ModeloType:
+        """
+        Propose a new model under an already-approved brand.
+        Raises ValueError if the brand is not yet approved.
+        Raises ValueError if an identical name already exists under that brand.
+        """
+        user = get_user_from_request(info)
+        tenant = get_tenant_from_user(user)
+        empresa = EmpresaPerfil.objects.get(tenant=tenant)
+        marca = Marca.objects.select_related('subcategoria').get(pk=marca_id)
+
+        if marca.status != Marca.Status.APROBADA:
+            raise ValueError(
+                'Solo puedes proponer modelos para marcas ya aprobadas. '
+                f'Esta marca está en estado "{marca.get_status_display()}".'
+            )
+
+        if Modelo.objects.filter(
+            marca=marca,
+            nombre__iexact=nombre.strip(),
+        ).exists():
+            raise ValueError(
+                f'Ya existe un modelo con el nombre "{nombre}" en esa marca.'
+            )
+
+        modelo = Modelo.objects.create(
+            subcategoria=marca.subcategoria,
+            marca=marca,
+            nombre=nombre.strip(),
+            descripcion=descripcion,
+            creada_por=empresa,
+        )
+        NotificacionStaff.objects.create(
+            tipo=NotificacionStaff.Tipo.MODELO_NUEVO,
+            referencia_id=modelo.pk,
+            mensaje=(
+                f'{empresa.nombre_comercial} propuso el modelo '
+                f'"{nombre}" (marca {marca.nombre})'
+            ),
+        )
+        return modelo
+
+    @strawberry.mutation
+    def agregar_empresa_modelo(
+        self,
+        info: Info,
+        modelo_id: strawberry.ID,
+        existencia: bool = True,
+    ) -> EmpresaModeloType:
+        """
+        Link an approved Modelo to the authenticated tenant's company profile.
+        Raises ValueError if the model is not approved or already linked.
+        """
+        user = get_user_from_request(info)
+        tenant = get_tenant_from_user(user)
+        empresa = EmpresaPerfil.objects.get(tenant=tenant)
+        modelo = Modelo.objects.select_related('marca', 'subcategoria').get(pk=modelo_id)
+
+        if modelo.status != Modelo.Status.APROBADO:
+            raise ValueError(
+                'Solo puedes vincular modelos aprobados. '
+                f'Este modelo está en estado "{modelo.get_status_display()}".'
+            )
+
+        # Enforce per-subcategoria plan limit
+        current = EmpresaModelo.objects.filter(
+            empresa=empresa,
+            modelo__subcategoria=modelo.subcategoria,
+        ).count()
+        from directorio.plan_limits import enforce_max
+        enforce_max(
+            empresa,
+            'max_modelos_por_subcategoria',
+            current,
+            f'modelos en "{modelo.subcategoria.nombre}"',
+        )
+
+        em, created = EmpresaModelo.objects.get_or_create(
+            empresa=empresa,
+            modelo=modelo,
+            defaults={'existencia': existencia},
+        )
+        if not created:
+            raise ValueError(
+                'Este modelo ya está vinculado a tu empresa. '
+                'Usa actualizarEmpresaModelo para cambiar la existencia.'
+            )
+        return em
+
+    @strawberry.mutation
+    def actualizar_empresa_modelo(
+        self,
+        info: Info,
+        empresa_modelo_id: strawberry.ID,
+        existencia: bool,
+    ) -> EmpresaModeloType:
+        """Update the existencia flag on an existing EmpresaModelo entry."""
+        user = get_user_from_request(info)
+        tenant = get_tenant_from_user(user)
+        empresa = EmpresaPerfil.objects.get(tenant=tenant)
+        em = EmpresaModelo.objects.select_related(
+            'modelo__marca', 'modelo__subcategoria'
+        ).get(pk=empresa_modelo_id, empresa=empresa)
+        em.existencia = existencia
+        em.save(update_fields=['existencia', 'updated_at'])
+        return em
+
+    @strawberry.mutation
+    def eliminar_empresa_modelo(
+        self,
+        info: Info,
+        empresa_modelo_id: strawberry.ID,
+    ) -> bool:
+        """Remove a Modelo from the authenticated tenant's company profile."""
+        user = get_user_from_request(info)
+        tenant = get_tenant_from_user(user)
+        empresa = EmpresaPerfil.objects.get(tenant=tenant)
+        deleted, _ = EmpresaModelo.objects.filter(
+            pk=empresa_modelo_id,
+            empresa=empresa,
+        ).delete()
+        return deleted > 0
 
     # ── Lead mutations ─────────────────────────────────────────────────────
 
