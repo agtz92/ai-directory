@@ -6,11 +6,12 @@ from strawberry.types import Info
 
 from users.auth import get_user_from_request, get_tenant_from_user
 from directorio.models import (
-    Categoria, Subcategoria, EmpresaPerfil, SolicitudCotizacion, Marca, Modelo,
+    Categoria, Subcategoria, EmpresaPerfil, SolicitudCotizacion, Marca, Modelo, BlogPost,
 )
 from directorio.types import (
     CategoriaType, SubcategoriaType, EmpresaPerfilType,
     SolicitudCotizacionType, DashboardStats, MarcaType, ModeloType,
+    BlogPostType, BlogPostListResult,
 )
 
 
@@ -173,6 +174,36 @@ class DirectorioQuery:
         if marca_id is not None:
             qs = qs.filter(marca_id=marca_id)
         return list(qs)
+
+    @strawberry.field
+    def articulos(
+        self,
+        info: Info,
+        limit: int = 10,
+        offset: int = 0,
+    ) -> BlogPostListResult:
+        """Paginated list of published business blog posts (authenticated)."""
+        get_user_from_request(info)
+        limit = min(max(limit, 1), 50)
+        qs = (
+            BlogPost.objects
+            .filter(status='published', target='business')
+            .select_related('autor')
+        )
+        total = qs.count()
+        posts = list(qs[offset: offset + limit])
+        return BlogPostListResult(posts=posts, total=total, has_more=(offset + limit) < total)
+
+    @strawberry.field
+    def articulo(self, info: Info, slug: str) -> Optional[BlogPostType]:
+        """Single published business blog post by slug (authenticated)."""
+        get_user_from_request(info)
+        try:
+            return BlogPost.objects.select_related('autor').get(
+                slug=slug, status='published', target='business'
+            )
+        except BlogPost.DoesNotExist:
+            return None
 
     @strawberry.field
     def dashboard_stats(self, info: Info) -> DashboardStats:

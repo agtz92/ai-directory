@@ -12,11 +12,11 @@ from strawberry.types import Info
 
 from directorio.models import (
     Categoria, Subcategoria, EmpresaPerfil, SolicitudCotizacion,
-    InvitacionEmpresa, Marca, Modelo,
+    InvitacionEmpresa, Marca, Modelo, BlogPost,
 )
 from directorio.types import (
     CategoriaType, SubcategoriaType, EmpresaPerfilPublicType,
-    DirectorioResultType, MarcaType, ModeloType,
+    DirectorioResultType, MarcaType, ModeloType, BlogPostType, BlogPostListResult,
 )
 from directorio.plan_limits import PlanInfoType, build_all_plans  # noqa: F401
 
@@ -154,6 +154,34 @@ class PublicQuery:
         if marca_id is not None:
             qs = qs.filter(marca_id=marca_id)
         return list(qs)
+
+    @strawberry.field
+    def blog_posts(
+        self,
+        info: Info,
+        limit: int = 10,
+        offset: int = 0,
+    ) -> BlogPostListResult:
+        """Paginated list of published industry blog posts (public)."""
+        limit = min(max(limit, 1), 50)
+        qs = (
+            BlogPost.objects
+            .filter(status='published', target='industry')
+            .select_related('autor')
+        )
+        total = qs.count()
+        posts = list(qs[offset: offset + limit])
+        return BlogPostListResult(posts=posts, total=total, has_more=(offset + limit) < total)
+
+    @strawberry.field
+    def blog_post(self, info: Info, slug: str) -> Optional[BlogPostType]:
+        """Single published industry blog post by slug (public)."""
+        try:
+            return BlogPost.objects.select_related('autor').get(
+                slug=slug, status='published', target='industry'
+            )
+        except BlogPost.DoesNotExist:
+            return None
 
     @strawberry.field
     def invitacion(self, info: Info, token: str) -> Optional[InvitacionInfoType]:

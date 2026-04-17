@@ -25,12 +25,13 @@ from users.auth import get_user_from_request
 from users.models import CustomUser
 from directorio.models import (
     Categoria, Subcategoria, EmpresaPerfil, SolicitudCotizacion, Producto, _unique_slug,
-    Marca, Modelo, EmpresaModelo, NotificacionStaff,
+    Marca, Modelo, EmpresaModelo, NotificacionStaff, BlogPost,
     _unique_slug_within_subcategoria_marca, _unique_slug_within_marca,
 )
 from directorio.types import (
     EmpresaPerfilType, SolicitudCotizacionType,
     MarcaType, ModeloType, EmpresaModeloType, NotificacionStaffType,
+    BlogPostType, BlogPostListResult,
 )
 
 logger = logging.getLogger(__name__)
@@ -353,6 +354,42 @@ class StaffQuery:
                 date_joined=u.date_joined,
             )
         except CustomUser.DoesNotExist:
+            return None
+
+    # ── Blog ──
+
+    @strawberry.field
+    def staff_posts(
+        self,
+        info: Info,
+        target: str = '',
+        status: str = '',
+        search: str = '',
+        limit: int = 50,
+        offset: int = 0,
+    ) -> BlogPostListResult:
+        """List blog posts with optional filters. Available to all internal roles."""
+        _require_internal(info)
+        qs = BlogPost.objects.select_related('autor')
+        if target:
+            qs = qs.filter(target=target)
+        if status:
+            qs = qs.filter(status=status)
+        if search:
+            from django.db.models import Q
+            qs = qs.filter(Q(titulo__icontains=search) | Q(extracto__icontains=search))
+        limit = min(max(limit, 1), 200)
+        total = qs.count()
+        posts = list(qs[offset: offset + limit])
+        return BlogPostListResult(posts=posts, total=total, has_more=(offset + limit) < total)
+
+    @strawberry.field
+    def staff_post(self, info: Info, post_id: strawberry.ID) -> Optional[BlogPostType]:
+        """Single blog post by id. Available to all internal roles."""
+        _require_internal(info)
+        try:
+            return BlogPost.objects.select_related('autor').get(pk=post_id)
+        except BlogPost.DoesNotExist:
             return None
 
 
@@ -893,6 +930,95 @@ class StaffMutation:
             staff_role=target.staff_role,
             date_joined=target.date_joined,
         )
+
+    # ── Blog mutations ──
+
+    @strawberry.mutation
+    def staff_crear_post(
+        self,
+        info: Info,
+        titulo: str,
+        contenido: str,
+        extracto: str = '',
+        imagen_portada: str = '',
+        target: str = 'industry',
+    ) -> BlogPostType:
+        """Create a new blog post as a draft. Available to all internal roles."""
+        actor = _require_internal(info)
+        if target not in ('industry', 'business'):
+            raise ValueError('target debe ser "industry" o "business"')
+        post = BlogPost.objects.create(
+            titulo=titulo,
+            contenido=contenido,
+            extracto=extracto,
+            imagen_portada=imagen_portada,
+            target=target,
+            status='draft',
+            autor=actor,
+        )
+        logger.info(f'[STAFF] {actor.email} creó BlogPost "{post.titulo}" target={target}')
+        return post
+
+    @strawberry.mutation
+    def staff_actualizar_post(
+        self,
+        info: Info,
+        post_id: strawberry.ID,
+        titulo: str = '',
+        contenido: str = '',
+        extracto: str = '',
+        imagen_portada: str = '',
+        target: str = '',
+    ) -> BlogPostType:
+        """Update an existing blog post. Available to all internal roles."""
+        actor = _require_internal(info)
+        post = BlogPost.objects.select_related('autor').get(pk=post_id)
+        if titulo:
+            post.titulo = titulo
+        if contenido:
+            post.contenido = contenido
+        if extracto is not None:
+            post.extracto = extracto
+        if imagen_portada is not None:
+            post.imagen_portada = imagen_portada
+        if target and target in ('industry', 'business'):
+            post.target = target
+        post.save()
+        logger.info(f'[STAFF] {actor.email} actualizó BlogPost "{post.titulo}" id={post_id}')
+        return post
+
+    @strawberry.mutation
+    def staff_publicar_post(self, info: Info, post_id: strawberry.ID) -> BlogPostType:
+        """Publish a blog post. Admin or owner only."""
+        actor = _require_admin(info)
+        from django.utils import timezone as tz
+        post = BlogPost.objects.select_related('autor').get(pk=post_id)
+        post.status = 'published'
+        if not post.published_at:
+            post.published_at = tz.now()
+        post.save(update_fields=['status', 'published_at'])
+        logger.info(f'[STAFF] {actor.email} publicó BlogPost "{post.titulo}"')
+        return post
+
+    @strawberry.mutation
+    def staff_archivar_post(self, info: Info, post_id: strawberry.ID) -> BlogPostType:
+        """Archive (unpublish) a blog post. Admin or owner only."""
+        actor = _require_admin(info)
+        post = BlogPost.objects.select_related('autor').get(pk=post_id)
+        post.status = 'archived'
+        post.save(update_fields=['status'])
+        logger.info(f'[STAFF] {actor.email} archivó BlogPost "{post.titulo}"')
+        return post
+
+    @strawberry.mutation
+    def staff_eliminar_post(self, info: Info, post_id: strawberry.ID) -> bool:
+        """Permanently delete a blog post. Admin or owner only."""
+        actor = _require_admin(info)
+        post = BlogPost.objects.get(pk=post_id)
+        titulo = post.titulo
+        post.delete()
+        logger.info(f'[STAFF] {actor.email} eliminó BlogPost "{titulo}"')
+        return True
 
 
 # ─── Schema ───────────────────────────────────────────────────────────────────

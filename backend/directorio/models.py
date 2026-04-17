@@ -658,3 +658,57 @@ class NotificacionStaff(models.Model):
     def __str__(self):
         estado = 'leída' if self.leida else 'no leída'
         return f'[{self.tipo}] ref={self.referencia_id} ({estado})'
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# Blog
+# ─────────────────────────────────────────────────────────────────────────────
+
+class BlogPost(models.Model):
+    """
+    A blog article written by staff.
+    target='industry' → published on /website/blog (public, industry news).
+    target='business' → published on /frontend/recursos (authenticated, sales/partnerships).
+    content is stored as Markdown.
+    """
+
+    class Target(models.TextChoices):
+        INDUSTRY = 'industry', 'Industria (sitio público)'
+        BUSINESS = 'business', 'Negocios (panel empresa)'
+
+    class Status(models.TextChoices):
+        DRAFT     = 'draft',     'Borrador'
+        PUBLISHED = 'published', 'Publicado'
+        ARCHIVED  = 'archived',  'Archivado'
+
+    id             = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    titulo         = models.CharField(max_length=200)
+    slug           = models.SlugField(max_length=220, unique=True)
+    extracto       = models.CharField(max_length=400, blank=True)
+    contenido      = models.TextField()
+    imagen_portada = models.URLField(blank=True)
+    target         = models.CharField(max_length=20, choices=Target.choices, default=Target.INDUSTRY)
+    status         = models.CharField(max_length=20, choices=Status.choices, default=Status.DRAFT)
+    autor          = models.ForeignKey(
+        'users.CustomUser',
+        null=True, blank=True,
+        on_delete=models.SET_NULL,
+        related_name='blog_posts',
+    )
+    created_at     = models.DateTimeField(auto_now_add=True)
+    updated_at     = models.DateTimeField(auto_now=True)
+    published_at   = models.DateTimeField(null=True, blank=True)
+
+    class Meta:
+        db_table = 'directorio_blog_post'
+        ordering = ['-published_at', '-created_at']
+        verbose_name = 'Blog Post'
+        verbose_name_plural = 'Blog Posts'
+
+    def save(self, *args, **kwargs):
+        if not self.slug:
+            self.slug = _unique_slug(self.titulo, BlogPost, exclude_pk=self.pk)
+        super().save(*args, **kwargs)
+
+    def __str__(self):
+        return f'[{self.target}] {self.titulo}'

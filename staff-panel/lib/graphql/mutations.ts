@@ -282,3 +282,66 @@ export const STAFF_ELIMINAR_EMPRESA_MODELO_MUTATION = gql`
     staffEliminarEmpresaModelo(empresaModeloId: $empresaModeloId)
   }
 `
+
+// ─── Blog ─────────────────────────────────────────────────────────────────────
+
+const BLOG_POST_FIELDS = `
+  id titulo slug extracto contenido imagenPortada
+  target status autorNombre createdAt updatedAt publishedAt
+`
+
+export const STAFF_CREAR_POST_MUTATION = gql`
+  mutation StaffCrearPost(
+    $titulo: String!
+    $contenido: String!
+    $extracto: String
+    $imagenPortada: String
+    $target: String
+  ) {
+    staffCrearPost(
+      titulo: $titulo
+      contenido: $contenido
+      extracto: $extracto
+      imagenPortada: $imagenPortada
+      target: $target
+    ) { ${BLOG_POST_FIELDS} }
+  }
+`
+
+export const STAFF_ACTUALIZAR_POST_MUTATION = gql`
+  mutation StaffActualizarPost(
+    $postId: ID!
+    $titulo: String
+    $contenido: String
+    $extracto: String
+    $imagenPortada: String
+    $target: String
+  ) {
+    staffActualizarPost(
+      postId: $postId
+      titulo: $titulo
+      contenido: $contenido
+      extracto: $extracto
+      imagenPortada: $imagenPortada
+      target: $target
+    ) { ${BLOG_POST_FIELDS} }
+  }
+`
+
+export const STAFF_PUBLICAR_POST_MUTATION = gql`
+  mutation StaffPublicarPost($postId: ID!) {
+    staffPublicarPost(postId: $postId) { id status publishedAt }
+  }
+`
+
+export const STAFF_ARCHIVAR_POST_MUTATION = gql`
+  mutation StaffArchivarPost($postId: ID!) {
+    staffArchivarPost(postId: $postId) { id status }
+  }
+`
+
+export const STAFF_ELIMINAR_POST_MUTATION = gql`
+  mutation StaffEliminarPost($postId: ID!) {
+    staffEliminarPost(postId: $postId)
+  }
+`

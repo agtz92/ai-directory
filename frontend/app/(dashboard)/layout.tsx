@@ -9,7 +9,7 @@ import { apolloClient } from '@/lib/apollo'
 import { ME_QUERY } from '@/lib/graphql/queries'
 import { ThemeToggle } from '@/components/ThemeToggle'
 import {
-  LayoutDashboard, Building2, Inbox, Settings, LogOut, Box,
+  LayoutDashboard, Building2, Inbox, Settings, LogOut, Box, BookOpen,
 } from 'lucide-react'
 
 const NAV = [
@@ -17,6 +17,7 @@ const NAV = [
   { href: '/empresa',             label: 'Mi Empresa',     icon: Building2 },
   { href: '/empresa/leads',       label: 'Solicitudes',    icon: Inbox },
   { href: '/empresa/modelos',     label: 'Productos',      icon: Box },
+  { href: '/recursos',            label: 'Recursos',       icon: BookOpen },
   { href: '/configuracion',       label: 'Configuración',  icon: Settings },
 ]
 

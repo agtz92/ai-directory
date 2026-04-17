@@ -2,7 +2,7 @@
 
 import Link from 'next/link'
 import { usePathname } from 'next/navigation'
-import { Search, Grid3X3, Sun, Moon, Building2, Factory } from 'lucide-react'
+import { Search, Grid3X3, Sun, Moon, Building2, Factory, Newspaper } from 'lucide-react'
 import { useTheme } from './ThemeProvider'
 
 export default function Navbar() {
@@ -12,6 +12,7 @@ export default function Navbar() {
   const links = [
     { href: '/categorias', label: 'Categorías', icon: Grid3X3 },
     { href: '/proveedores', label: 'Proveedores', icon: Factory },
+    { href: '/blog', label: 'Blog', icon: Newspaper },
     { href: '/buscar', label: 'Buscar', icon: Search },
   ]
 

@@ -130,3 +130,20 @@ export const MIS_MODELOS_PROPUESTOS_QUERY = gql`
     }
   }
 `
+
+export const ARTICULOS_QUERY = gql`
+  query Articulos($limit: Int, $offset: Int) {
+    articulos(limit: $limit, offset: $offset) {
+      total hasMore
+      posts { id titulo slug extracto imagenPortada autorNombre publishedAt }
+    }
+  }
+`
+
+export const ARTICULO_QUERY = gql`
+  query Articulo($slug: String!) {
+    articulo(slug: $slug) {
+      id titulo slug extracto contenido imagenPortada autorNombre publishedAt
+    }
+  }
+`

@@ -13,3 +13,20 @@ export const DIRECTORIO_SEARCH_QUERY = `
     }
   }
 `
+
+export const BLOG_POSTS_QUERY = `
+  query BlogPosts($limit: Int, $offset: Int) {
+    blogPosts(limit: $limit, offset: $offset) {
+      total hasMore
+      posts { id titulo slug extracto imagenPortada autorNombre publishedAt }
+    }
+  }
+`
+
+export const BLOG_POST_QUERY = `
+  query BlogPost($slug: String!) {
+    blogPost(slug: $slug) {
+      id titulo slug extracto contenido imagenPortada autorNombre publishedAt
+    }
+  }
+`

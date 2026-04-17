@@ -10,7 +10,7 @@ from strawberry import auto
 
 from directorio.models import (
     Categoria, Subcategoria, EmpresaPerfil, SolicitudCotizacion,
-    Marca, Modelo, EmpresaModelo, NotificacionStaff,
+    Marca, Modelo, EmpresaModelo, NotificacionStaff, BlogPost,
 )
 
 
@@ -271,5 +271,34 @@ class DashboardStats:
 @strawberry.type
 class DirectorioResultType:
     empresas: List[EmpresaPerfilPublicType]
+    total: int
+    has_more: bool
+
+
+@strawberry.type
+class BlogPostType:
+    id: strawberry.ID
+    titulo: str
+    slug: str
+    extracto: str
+    contenido: str
+    imagen_portada: str
+    target: str
+    status: str
+    created_at: datetime
+    updated_at: datetime
+    published_at: Optional[datetime]
+
+    @strawberry.field
+    def autor_nombre(self) -> str:
+        if self.autor_id:
+            autor = self.autor
+            return getattr(autor, 'display_name', None) or autor.email
+        return 'Staff'
+
+
+@strawberry.type
+class BlogPostListResult:
+    posts: List[BlogPostType]
     total: int
     has_more: bool

@@ -168,3 +168,27 @@ export const STAFF_MODELOS_QUERY = gql`
     }
   }
 `
+
+// ─── Blog ─────────────────────────────────────────────────────────────────────
+
+const BLOG_POST_FIELDS = `
+  id titulo slug extracto contenido imagenPortada
+  target status autorNombre createdAt updatedAt publishedAt
+`
+
+export const STAFF_POSTS_QUERY = gql`
+  query StaffPosts($target: String, $status: String, $search: String, $limit: Int, $offset: Int) {
+    staffPosts(target: $target, status: $status, search: $search, limit: $limit, offset: $offset) {
+      total hasMore
+      posts { id titulo slug extracto imagenPortada target status autorNombre createdAt updatedAt publishedAt }
+    }
+  }
+`
+
+export const STAFF_POST_QUERY = gql`
+  query StaffPost($postId: ID!) {
+    staffPost(postId: $postId) {
+      ${BLOG_POST_FIELDS}
+    }
+  }
+`

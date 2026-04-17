@@ -47,7 +47,8 @@
       "Bash(/c/GitHub/directorio-ai/venv/Scripts/python.exe manage.py shell -c ':*)",
       "Bash(python manage.py migrate directorio 0009_empresa_modelo_por_marca)",
       "Bash(rm -rf frontend/.git website/.git)",
-      "Bash(git add:*)"
+      "Bash(git add:*)",
+      "Bash(python manage.py migrate directorio 0010_add_blog_post)"
     ]
   }
 }

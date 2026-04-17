@@ -9,7 +9,7 @@ import { useStaffRole } from '@/lib/use-staff-role'
 import { STAFF_EMPRESAS_QUERY, STAFF_NOTIFICACIONES_QUERY } from '@/lib/graphql/queries'
 import { useQuery } from '@apollo/client'
 import {
-  LayoutDashboard, Users, LogOut, ShieldCheck, Search, Building2, Bell, BookOpen,
+  LayoutDashboard, Users, LogOut, ShieldCheck, Search, Building2, Bell, BookOpen, Newspaper,
 } from 'lucide-react'
 
 const PLAN_COLORS: Record<string, string> = {
@@ -139,6 +139,18 @@ export default function StaffLayout({ children }: { children: React.ReactNode })
           >
             <BookOpen size={15} />
             Catálogo
+          </Link>
+
+          <Link
+            href="/blog"
+            className={`flex items-center gap-2 px-3 py-2 rounded-lg text-sm transition-colors ${
+              pathname.startsWith('/blog')
+                ? 'bg-blue-600 text-white'
+                : 'text-gray-400 hover:bg-gray-800 hover:text-white'
+            }`}
+          >
+            <Newspaper size={15} />
+            Blog
           </Link>
 
           {canManageTeam && (
