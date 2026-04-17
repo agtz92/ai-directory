@@ -1,0 +1,21 @@
+@import "tailwindcss";
+
+@custom-variant dark {
+  &:where(.dark, .dark *) {
+    @slot;
+  }
+}
+
+html {
+  transition: background-color 200ms ease, color 200ms ease;
+}
+
+body {
+  font-family: var(--font-inter), system-ui, sans-serif;
+}
+
+/* Scrollbar */
+::-webkit-scrollbar { width: 6px; height: 6px; }
+::-webkit-scrollbar-track { background: transparent; }
+::-webkit-scrollbar-thumb { background: #cbd5e1; border-radius: 3px; }
+.dark ::-webkit-scrollbar-thumb { background: #334155; }

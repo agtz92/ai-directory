@@ -45,7 +45,9 @@
       "Bash(find /c/GitHub/directorio-ai/backend -type f -name \"*.py\" -exec grep -l \"Producto\\\\|Product\" {} \\\\;)",
       "Bash(/c/GitHub/directorio-ai/venv/Scripts/python.exe manage.py makemigrations directorio --name=\"add_producto_model\")",
       "Bash(/c/GitHub/directorio-ai/venv/Scripts/python.exe manage.py shell -c ':*)",
-      "Bash(python manage.py migrate directorio 0009_empresa_modelo_por_marca)"
+      "Bash(python manage.py migrate directorio 0009_empresa_modelo_por_marca)",
+      "Bash(rm -rf frontend/.git website/.git)",
+      "Bash(git add:*)"
     ]
   }
 }
