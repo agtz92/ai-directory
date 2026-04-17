@@ -21,19 +21,15 @@ type BlogPostsData = {
   }
 }
 
-export const revalidate = 3600
+export const dynamic = 'force-dynamic'
 
 export default async function BlogPage() {
   let posts: Post[] = []
   let total = 0
 
-  try {
-    const data = await gql<BlogPostsData>(BLOG_POSTS_QUERY, { limit: 12, offset: 0 }, 3600)
-    posts = data.blogPosts.posts
-    total = data.blogPosts.total
-  } catch {
-    // Fail gracefully — blog section is optional
-  }
+  const data = await gql<BlogPostsData>(BLOG_POSTS_QUERY, { limit: 12, offset: 0 }, 0)
+  posts = data.blogPosts.posts
+  total = data.blogPosts.total
 
   return (
     <main className="max-w-5xl mx-auto px-4 py-10">

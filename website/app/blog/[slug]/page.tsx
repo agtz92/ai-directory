@@ -3,9 +3,9 @@ import Link from 'next/link'
 import { gql } from '@/lib/graphql'
 import { BLOG_POST_QUERY, BLOG_POSTS_QUERY } from '@/lib/graphql/queries'
 import { ArrowLeft, Calendar, User } from 'lucide-react'
-import ReactMarkdown from 'react-markdown'
+import MarkdownRenderer from '@/app/components/MarkdownRenderer'
 
-export const revalidate = 1800
+export const dynamic = 'force-dynamic'
 
 type Post = {
   id: string
@@ -31,12 +31,10 @@ export async function generateStaticParams() {
   }
 }
 
-export default async function BlogPostPage({ params }: { params: { slug: string } }) {
-  let post: Post | null = null
-  try {
-    const data = await gql<{ blogPost: Post | null }>(BLOG_POST_QUERY, { slug: params.slug }, 1800)
-    post = data.blogPost
-  } catch { /* empty */ }
+export default async function BlogPostPage({ params }: { params: Promise<{ slug: string }> }) {
+  const { slug } = await params
+  const data = await gql<{ blogPost: Post | null }>(BLOG_POST_QUERY, { slug }, 0)
+  const post = data.blogPost
 
   if (!post) notFound()
 
@@ -89,9 +87,7 @@ export default async function BlogPostPage({ params }: { params: { slug: string 
       </div>
 
       {/* Content */}
-      <article className="mt-8 prose prose-slate dark:prose-invert prose-headings:font-bold prose-a:text-blue-600 max-w-none">
-        <ReactMarkdown>{post.contenido}</ReactMarkdown>
-      </article>
+      <MarkdownRenderer content={post.contenido} className="mt-8" />
     </main>
   )
 }

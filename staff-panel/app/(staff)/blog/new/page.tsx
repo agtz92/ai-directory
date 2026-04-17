@@ -7,7 +7,7 @@ import { useStaffRole } from '@/lib/use-staff-role'
 import { STAFF_CREAR_POST_MUTATION, STAFF_PUBLICAR_POST_MUTATION } from '@/lib/graphql/mutations'
 import { Eye, EyeOff, ArrowLeft, Globe, Briefcase } from 'lucide-react'
 import { toast } from 'sonner'
-import ReactMarkdown from 'react-markdown'
+import MarkdownRenderer from '@/components/MarkdownRenderer'
 
 export default function NewPostPage() {
   const router = useRouter()
@@ -103,7 +103,7 @@ export default function NewPostPage() {
             {preview ? (
               <div className="min-h-64 border border-gray-200 rounded-lg px-4 py-3 bg-white prose prose-sm max-w-none text-gray-800">
                 {contenido ? (
-                  <ReactMarkdown>{contenido}</ReactMarkdown>
+                  <MarkdownRenderer content={contenido} />
                 ) : (
                   <p className="text-gray-400 italic">Sin contenido aún.</p>
                 )}

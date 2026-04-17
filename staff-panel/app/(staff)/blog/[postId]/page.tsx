@@ -12,7 +12,7 @@ import {
 } from '@/lib/graphql/mutations'
 import { Eye, EyeOff, ArrowLeft, Globe, Briefcase, Trash2 } from 'lucide-react'
 import { toast } from 'sonner'
-import ReactMarkdown from 'react-markdown'
+import MarkdownRenderer from '@/components/MarkdownRenderer'
 
 export default function EditPostPage() {
   const router = useRouter()
@@ -163,7 +163,7 @@ export default function EditPostPage() {
             {preview ? (
               <div className="min-h-64 border border-gray-200 rounded-lg px-4 py-3 bg-white prose prose-sm max-w-none text-gray-800">
                 {contenido ? (
-                  <ReactMarkdown>{contenido}</ReactMarkdown>
+                  <MarkdownRenderer content={contenido} />
                 ) : (
                   <p className="text-gray-400 italic">Sin contenido.</p>
                 )}

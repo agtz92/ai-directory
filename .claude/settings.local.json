@@ -48,7 +48,10 @@
       "Bash(python manage.py migrate directorio 0009_empresa_modelo_por_marca)",
       "Bash(rm -rf frontend/.git website/.git)",
       "Bash(git add:*)",
-      "Bash(python manage.py migrate directorio 0010_add_blog_post)"
+      "Bash(python manage.py migrate directorio 0010_add_blog_post)",
+      "Bash(C:/GitHub/directorio-ai/venv/Scripts/python.exe manage.py migrate directorio 0010_add_blog_post)",
+      "Bash(C:/GitHub/directorio-ai/venv/Scripts/python.exe create_posts.py)",
+      "Bash(curl -s -X POST http://localhost:8000/public/graphql/ -H \"Content-Type: application/json\" -d \"{\\\\\"query\\\\\":\\\\\"{ blogPosts\\(limit:5\\) { total posts { id titulo target status } } }\\\\\"}\")"
     ]
   }
 }

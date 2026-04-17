@@ -5,7 +5,7 @@ import { useQuery } from '@apollo/client'
 import { useAuthStore } from '@/lib/auth-store'
 import { ARTICULO_QUERY } from '@/lib/graphql/queries'
 import { ArrowLeft, Calendar, User } from 'lucide-react'
-import ReactMarkdown from 'react-markdown'
+import MarkdownRenderer from '@/components/MarkdownRenderer'
 
 export default function ArticuloPage() {
   const { slug } = useParams<{ slug: string }>()
@@ -94,9 +94,7 @@ export default function ArticuloPage() {
       </div>
 
       {/* Content */}
-      <article className="mt-6 prose prose-slate dark:prose-invert prose-sm prose-headings:font-bold prose-a:text-violet-600 max-w-none">
-        <ReactMarkdown>{post.contenido}</ReactMarkdown>
-      </article>
+      <MarkdownRenderer content={post.contenido} className="mt-6" />
     </div>
   )
 }
