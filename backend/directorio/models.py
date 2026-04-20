@@ -712,3 +712,101 @@ class BlogPost(models.Model):
 
     def __str__(self):
         return f'[{self.target}] {self.titulo}'
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# Foro (Forum)
+# ─────────────────────────────────────────────────────────────────────────────
+
+class ForoPost(models.Model):
+    MOD_PENDING  = 'pending'
+    MOD_APPROVED = 'approved'
+    MOD_REJECTED = 'rejected'
+    MOD_CHOICES  = [
+        (MOD_PENDING,  'Pendiente'),
+        (MOD_APPROVED, 'Aprobado'),
+        (MOD_REJECTED, 'Rechazado'),
+    ]
+
+    subcategorias     = models.ManyToManyField(
+        'Subcategoria', related_name='foro_posts', blank=False
+    )
+    titulo            = models.CharField(max_length=300)
+    contenido         = models.TextField()
+    autor_nombre      = models.CharField(max_length=150)
+    autor_email       = models.EmailField(blank=True)          # never exposed publicly
+    empresa           = models.ForeignKey(
+        'EmpresaPerfil', null=True, blank=True,
+        on_delete=models.SET_NULL, related_name='foro_posts'
+    )
+    ip_origen         = models.GenericIPAddressField(null=True, blank=True)
+    moderacion_status = models.CharField(
+        max_length=20, choices=MOD_CHOICES, default=MOD_APPROVED
+    )
+    deleted           = models.BooleanField(default=False)
+    deleted_by        = models.ForeignKey(
+        'users.CustomUser', null=True, blank=True,
+        on_delete=models.SET_NULL, related_name='foro_posts_deleted'
+    )
+    deleted_at        = models.DateTimeField(null=True, blank=True)
+    created_at        = models.DateTimeField(auto_now_add=True)
+    updated_at        = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        db_table    = 'directorio_foro_post'
+        ordering    = ['-created_at']
+        indexes     = [models.Index(fields=['-created_at'], name='directorio__created_e6eebb_idx')]
+        verbose_name        = 'Foro Post'
+        verbose_name_plural = 'Foro Posts'
+
+    def __str__(self):
+        return self.titulo
+
+
+class ForoRespuesta(models.Model):
+    post         = models.ForeignKey(
+        ForoPost, on_delete=models.CASCADE, related_name='respuestas'
+    )
+    contenido    = models.TextField()
+    autor_nombre = models.CharField(max_length=150)
+    autor_email  = models.EmailField(blank=True)
+    empresa      = models.ForeignKey(
+        'EmpresaPerfil', null=True, blank=True,
+        on_delete=models.SET_NULL, related_name='foro_respuestas'
+    )
+    ip_origen    = models.GenericIPAddressField(null=True, blank=True)
+    deleted      = models.BooleanField(default=False)
+    deleted_by   = models.ForeignKey(
+        'users.CustomUser', null=True, blank=True,
+        on_delete=models.SET_NULL, related_name='foro_respuestas_deleted'
+    )
+    deleted_at   = models.DateTimeField(null=True, blank=True)
+    created_at   = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        db_table    = 'directorio_foro_respuesta'
+        ordering    = ['created_at']
+        verbose_name        = 'Foro Respuesta'
+        verbose_name_plural = 'Foro Respuestas'
+
+    def __str__(self):
+        return f'Respuesta de {self.autor_nombre} en "{self.post.titulo}"'
+
+
+class NotificacionForo(models.Model):
+    """Stub for future customer notification when their subcategoria is mentioned."""
+    empresa    = models.ForeignKey(
+        'EmpresaPerfil', on_delete=models.CASCADE, related_name='notificaciones_foro'
+    )
+    post       = models.ForeignKey(ForoPost, on_delete=models.CASCADE)
+    leida      = models.BooleanField(default=False)
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        db_table        = 'directorio_notificacion_foro'
+        unique_together = [('empresa', 'post')]
+        verbose_name        = 'Notificacion Foro'
+        verbose_name_plural = 'Notificaciones Foro'
+
+    def __str__(self):
+        return f'Notif foro → {self.empresa} post#{self.post_id}'

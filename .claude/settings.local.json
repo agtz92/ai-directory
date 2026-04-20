@@ -51,7 +51,8 @@
       "Bash(python manage.py migrate directorio 0010_add_blog_post)",
       "Bash(C:/GitHub/directorio-ai/venv/Scripts/python.exe manage.py migrate directorio 0010_add_blog_post)",
       "Bash(C:/GitHub/directorio-ai/venv/Scripts/python.exe create_posts.py)",
-      "Bash(curl -s -X POST http://localhost:8000/public/graphql/ -H \"Content-Type: application/json\" -d \"{\\\\\"query\\\\\":\\\\\"{ blogPosts\\(limit:5\\) { total posts { id titulo target status } } }\\\\\"}\")"
+      "Bash(curl -s -X POST http://localhost:8000/public/graphql/ -H \"Content-Type: application/json\" -d \"{\\\\\"query\\\\\":\\\\\"{ blogPosts\\(limit:5\\) { total posts { id titulo target status } } }\\\\\"}\")",
+      "Bash(python manage.py makemigrations directorio --name add_forum)"
     ]
   }
 }

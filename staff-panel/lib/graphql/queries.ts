@@ -192,3 +192,15 @@ export const STAFF_POST_QUERY = gql`
     }
   }
 `
+
+export const STAFF_FORO_POSTS_QUERY = gql`
+  query StaffForoPosts($incluirEliminados: Boolean, $subcategoriaSlug: String, $limit: Int, $offset: Int) {
+    staffForoPosts(incluirEliminados: $incluirEliminados, subcategoriaSlug: $subcategoriaSlug, limit: $limit, offset: $offset) {
+      id titulo contenido autorNombre autorEmail
+      subcategorias { id nombre slug }
+      empresaNombre
+      deleted moderacionStatus respuestasCount createdAt
+      respuestas { id contenido autorNombre autorEmail empresaNombre deleted createdAt }
+    }
+  }
+`

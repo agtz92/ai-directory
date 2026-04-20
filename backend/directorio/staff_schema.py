@@ -27,6 +27,7 @@ from directorio.models import (
     Categoria, Subcategoria, EmpresaPerfil, SolicitudCotizacion, Producto, _unique_slug,
     Marca, Modelo, EmpresaModelo, NotificacionStaff, BlogPost,
     _unique_slug_within_subcategoria_marca, _unique_slug_within_marca,
+    ForoPost, ForoRespuesta,
 )
 from directorio.types import (
     EmpresaPerfilType, SolicitudCotizacionType,
@@ -391,6 +392,26 @@ class StaffQuery:
             return BlogPost.objects.select_related('autor').get(pk=post_id)
         except BlogPost.DoesNotExist:
             return None
+
+    # ── Forum queries ─────────────────────────────────────────────────────────
+
+    @strawberry.field
+    def staff_foro_posts(
+        self,
+        info: Info,
+        incluir_eliminados: bool = False,
+        subcategoria_slug: Optional[str] = None,
+        limit: int = 30,
+        offset: int = 0,
+    ) -> List['StaffForoPostType']:
+        """List forum posts for moderation. All internal roles."""
+        _require_internal(info)
+        qs = ForoPost.objects.select_related('empresa', 'deleted_by').prefetch_related('subcategorias')
+        if not incluir_eliminados:
+            qs = qs.filter(deleted=False)
+        if subcategoria_slug:
+            qs = qs.filter(subcategoria__slug=subcategoria_slug)
+        return list(qs.order_by('-created_at')[offset: offset + limit])
 
 
 # ─── Mutations ────────────────────────────────────────────────────────────────
@@ -1019,6 +1040,91 @@ class StaffMutation:
         post.delete()
         logger.info(f'[STAFF] {actor.email} eliminó BlogPost "{titulo}"')
         return True
+
+    # ── Forum moderation ─────────────────────────────────────────────────────
+
+    @strawberry.mutation
+    def staff_eliminar_foro_post(self, info: Info, post_id: strawberry.ID) -> bool:
+        """Soft-delete a forum post. Staff or above."""
+        from django.utils import timezone as tz
+        actor = _require_internal(info)
+        post = ForoPost.objects.get(pk=post_id)
+        post.deleted = True
+        post.deleted_by = actor
+        post.deleted_at = tz.now()
+        post.save(update_fields=['deleted', 'deleted_by', 'deleted_at'])
+        logger.info(f'[STAFF] {actor.email} eliminó ForoPost #{post.pk} "{post.titulo}"')
+        return True
+
+    @strawberry.mutation
+    def staff_eliminar_foro_respuesta(self, info: Info, respuesta_id: strawberry.ID) -> bool:
+        """Soft-delete a forum reply. Staff or above."""
+        from django.utils import timezone as tz
+        actor = _require_internal(info)
+        resp = ForoRespuesta.objects.get(pk=respuesta_id)
+        resp.deleted = True
+        resp.deleted_by = actor
+        resp.deleted_at = tz.now()
+        resp.save(update_fields=['deleted', 'deleted_by', 'deleted_at'])
+        logger.info(f'[STAFF] {actor.email} eliminó ForoRespuesta #{resp.pk}')
+        return True
+
+
+
+# ─── Staff forum types ────────────────────────────────────────────────────────
+
+@strawberry.type
+class StaffForoSubcategoriaChip:
+    id: strawberry.ID
+    nombre: str
+    slug: str
+
+
+@strawberry.type
+class StaffForoRespuestaType:
+    id: strawberry.ID
+    contenido: str
+    autor_nombre: str
+    autor_email: str
+    deleted: bool
+    created_at: datetime
+
+    @strawberry.field
+    def empresa_nombre(self) -> Optional[str]:
+        return self.empresa.nombre_comercial if self.empresa_id else None
+
+
+@strawberry.type
+class StaffForoPostType:
+    id: strawberry.ID
+    titulo: str
+    contenido: str
+    autor_nombre: str
+    autor_email: str
+    deleted: bool
+    moderacion_status: str
+    created_at: datetime
+
+    @strawberry.field
+    def subcategorias(self) -> List['StaffForoSubcategoriaChip']:
+        return list(self.subcategorias.all().order_by('nombre'))
+
+    @strawberry.field
+    def empresa_nombre(self) -> Optional[str]:
+        return self.empresa.nombre_comercial if self.empresa_id else None
+
+    @strawberry.field
+    def respuestas(self) -> List[StaffForoRespuestaType]:
+        return list(
+            ForoRespuesta.objects
+            .filter(post_id=self.pk)
+            .select_related('empresa')
+            .order_by('created_at')
+        )
+
+    @strawberry.field
+    def respuestas_count(self) -> int:
+        return ForoRespuesta.objects.filter(post_id=self.pk, deleted=False).count()
 
 
 # ─── Schema ───────────────────────────────────────────────────────────────────

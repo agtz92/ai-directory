@@ -13,12 +13,15 @@ from strawberry.types import Info
 from directorio.models import (
     Categoria, Subcategoria, EmpresaPerfil, SolicitudCotizacion,
     InvitacionEmpresa, Marca, Modelo, BlogPost,
+    ForoPost, ForoRespuesta, NotificacionForo,
 )
 from directorio.types import (
     CategoriaType, SubcategoriaType, EmpresaPerfilPublicType,
     DirectorioResultType, MarcaType, ModeloType, BlogPostType, BlogPostListResult,
+    ForoPostType, ForoRespuestaType, ForoPostListResult,
 )
 from directorio.plan_limits import PlanInfoType, build_all_plans  # noqa: F401
+from users.auth import get_user_from_request
 
 
 @strawberry.type
@@ -120,12 +123,21 @@ class PublicQuery:
         return list(qs)
 
     @strawberry.field
-    def subcategorias(self, info: Info, categoria_slug: str) -> List[SubcategoriaType]:
-        return list(
-            Subcategoria.objects
-            .filter(categoria__slug=categoria_slug)
-            .order_by('orden', 'nombre')
-        )
+    def subcategorias(
+        self,
+        info: Info,
+        categoria_slug: Optional[str] = None,
+        search: Optional[str] = None,
+        limit: Optional[int] = None,
+    ) -> List[SubcategoriaType]:
+        qs = Subcategoria.objects.select_related('categoria').order_by('categoria__nombre', 'orden', 'nombre')
+        if categoria_slug:
+            qs = qs.filter(categoria__slug=categoria_slug)
+        if search:
+            qs = qs.filter(nombre__icontains=search)
+        if limit:
+            qs = qs[:limit]
+        return list(qs)
 
     @strawberry.field
     def marcas(self, info: Info, subcategoria_slug: str) -> List[MarcaType]:
@@ -181,6 +193,47 @@ class PublicQuery:
                 slug=slug, status='published', target='industry'
             )
         except BlogPost.DoesNotExist:
+            return None
+
+    # ── Forum ────────────────────────────────────────────────────────────────
+
+    @strawberry.field
+    def foro_posts(
+        self,
+        info: Info,
+        subcategoria_slug: Optional[str] = None,
+        limit: int = 20,
+        offset: int = 0,
+    ) -> ForoPostListResult:
+        """Paginated list of forum posts. Optionally filtered by subcategoria slug."""
+        qs = (
+            ForoPost.objects
+            .filter(deleted=False, moderacion_status=ForoPost.MOD_APPROVED)
+            .select_related('empresa')
+            .prefetch_related('subcategorias')
+        )
+        if subcategoria_slug:
+            qs = qs.filter(subcategorias__slug=subcategoria_slug)
+        total = qs.count()
+        posts = list(qs[offset: offset + limit])
+        return ForoPostListResult(
+            posts=posts,
+            total=total,
+            has_more=(offset + limit) < total,
+        )
+
+    @strawberry.field
+    def foro_post(self, info: Info, id: int) -> Optional[ForoPostType]:
+        """Single forum post with replies."""
+        try:
+            return (
+                ForoPost.objects
+                .filter(deleted=False, moderacion_status=ForoPost.MOD_APPROVED)
+                .select_related('empresa')
+                .prefetch_related('subcategorias')
+                .get(pk=id)
+            )
+        except ForoPost.DoesNotExist:
             return None
 
     @strawberry.field
@@ -245,6 +298,149 @@ class PublicMutation:
             oculto_free=(empresa.plan == EmpresaPerfil.Plan.FREE),
         )
         return True
+
+    # ── Forum mutations ───────────────────────────────────────────────────────
+
+    @strawberry.mutation
+    def crear_foro_post(
+        self,
+        info: Info,
+        subcategoria_slugs: List[str],
+        titulo: str,
+        contenido: str,
+        autor_nombre: str,
+        autor_email: Optional[str] = None,
+    ) -> ForoPostType:
+        """
+        Create a forum post. Up to 5 subcategorias. Anonymous or authenticated.
+        Rate limit: 5 posts per IP per hour.
+        """
+        # Validate subcategorias
+        slugs = list(dict.fromkeys(s.strip() for s in subcategoria_slugs if s.strip()))  # dedupe
+        if not slugs:
+            raise ValueError('Selecciona al menos un producto de interés.')
+        if len(slugs) > 5:
+            raise ValueError('Máximo 5 productos de interés por publicación.')
+
+        subcategorias_qs = list(Subcategoria.objects.filter(slug__in=slugs))
+        if len(subcategorias_qs) != len(slugs):
+            found = {s.slug for s in subcategorias_qs}
+            missing = [s for s in slugs if s not in found]
+            raise ValueError(f'Subcategoría(s) no encontrada(s): {", ".join(missing)}')
+
+        # Basic field validation
+        titulo = titulo.strip()
+        contenido = contenido.strip()
+        autor_nombre = autor_nombre.strip()
+        if not titulo:
+            raise ValueError('El título no puede estar vacío.')
+        if not contenido:
+            raise ValueError('El contenido no puede estar vacío.')
+        if not autor_nombre:
+            raise ValueError('El nombre del autor es requerido.')
+
+        # Get client IP for rate limiting
+        request = info.context['request']
+        ip = (
+            request.META.get('HTTP_X_FORWARDED_FOR', '').split(',')[0].strip()
+            or request.META.get('REMOTE_ADDR')
+        )
+
+        # Rate limit: 5 posts per IP per hour
+        since = datetime.now(timezone.utc) - timedelta(hours=1)
+        recent_count = ForoPost.objects.filter(ip_origen=ip, created_at__gte=since).count()
+        if recent_count >= 5:
+            raise ValueError('Has creado demasiadas publicaciones. Intenta en una hora.')
+
+        # Optional auth: attach empresa if user is logged in
+        empresa = None
+        try:
+            user = get_user_from_request(info)
+            if user.active_tenant_id:
+                empresa = EmpresaPerfil.objects.filter(tenant=user.active_tenant).first()
+                if empresa:
+                    autor_nombre = empresa.nombre_comercial
+        except (ValueError, Exception):
+            pass  # Not authenticated — proceed anonymously
+
+        post = ForoPost.objects.create(
+            titulo=titulo,
+            contenido=contenido,
+            autor_nombre=autor_nombre,
+            autor_email=(autor_email or '').strip(),
+            empresa=empresa,
+            ip_origen=ip,
+        )
+        post.subcategorias.set(subcategorias_qs)
+
+        # Create notification stubs for empresas that sell in any selected subcategoria
+        empresas_a_notificar = (
+            EmpresaPerfil.objects
+            .filter(subcategorias__in=subcategorias_qs, status=EmpresaPerfil.Status.PUBLISHED)
+            .exclude(pk=empresa.pk if empresa else None)
+            .distinct()
+        )
+        NotificacionForo.objects.bulk_create(
+            [NotificacionForo(empresa=e, post=post) for e in empresas_a_notificar],
+            ignore_conflicts=True,
+        )
+
+        return post
+
+    @strawberry.mutation
+    def crear_foro_respuesta(
+        self,
+        info: Info,
+        post_id: int,
+        contenido: str,
+        autor_nombre: str,
+        autor_email: Optional[str] = None,
+    ) -> ForoRespuestaType:
+        """
+        Reply to a forum post. Anonymous or authenticated.
+        Rate limit: 5 replies per IP per hour.
+        """
+        try:
+            post = ForoPost.objects.get(pk=post_id, deleted=False)
+        except ForoPost.DoesNotExist:
+            raise ValueError('El post no existe o fue eliminado.')
+
+        contenido = contenido.strip()
+        autor_nombre = autor_nombre.strip()
+        if not contenido:
+            raise ValueError('El contenido no puede estar vacío.')
+        if not autor_nombre:
+            raise ValueError('El nombre del autor es requerido.')
+
+        request = info.context['request']
+        ip = (
+            request.META.get('HTTP_X_FORWARDED_FOR', '').split(',')[0].strip()
+            or request.META.get('REMOTE_ADDR')
+        )
+
+        since = datetime.now(timezone.utc) - timedelta(hours=1)
+        recent_count = ForoRespuesta.objects.filter(ip_origen=ip, created_at__gte=since).count()
+        if recent_count >= 5:
+            raise ValueError('Has enviado demasiadas respuestas. Intenta en una hora.')
+
+        empresa = None
+        try:
+            user = get_user_from_request(info)
+            if user.active_tenant_id:
+                empresa = EmpresaPerfil.objects.filter(tenant=user.active_tenant).first()
+                if empresa:
+                    autor_nombre = empresa.nombre_comercial
+        except (ValueError, Exception):
+            pass
+
+        return ForoRespuesta.objects.create(
+            post=post,
+            contenido=contenido,
+            autor_nombre=autor_nombre,
+            autor_email=(autor_email or '').strip(),
+            empresa=empresa,
+            ip_origen=ip,
+        )
 
 
 public_schema = strawberry.Schema(query=PublicQuery, mutation=PublicMutation)

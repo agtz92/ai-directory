@@ -345,3 +345,15 @@ export const STAFF_ELIMINAR_POST_MUTATION = gql`
     staffEliminarPost(postId: $postId)
   }
 `
+
+export const STAFF_ELIMINAR_FORO_POST_MUTATION = gql`
+  mutation StaffEliminarForoPost($postId: ID!) {
+    staffEliminarForoPost(postId: $postId)
+  }
+`
+
+export const STAFF_ELIMINAR_FORO_RESPUESTA_MUTATION = gql`
+  mutation StaffEliminarForoRespuesta($respuestaId: ID!) {
+    staffEliminarForoRespuesta(respuestaId: $respuestaId)
+  }
+`

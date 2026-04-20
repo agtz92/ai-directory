@@ -2,7 +2,7 @@
 
 import Link from 'next/link'
 import { usePathname } from 'next/navigation'
-import { Search, Grid3X3, Sun, Moon, Building2, Factory, Newspaper } from 'lucide-react'
+import { Search, Grid3X3, Sun, Moon, Building2, Factory, Newspaper, MessageSquare } from 'lucide-react'
 import { useTheme } from './ThemeProvider'
 
 export default function Navbar() {
@@ -13,6 +13,7 @@ export default function Navbar() {
     { href: '/categorias', label: 'Categorías', icon: Grid3X3 },
     { href: '/proveedores', label: 'Proveedores', icon: Factory },
     { href: '/blog', label: 'Blog', icon: Newspaper },
+    { href: '/foro', label: 'Foro', icon: MessageSquare },
     { href: '/buscar', label: 'Buscar', icon: Search },
   ]
 

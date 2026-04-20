@@ -11,6 +11,7 @@ from strawberry import auto
 from directorio.models import (
     Categoria, Subcategoria, EmpresaPerfil, SolicitudCotizacion,
     Marca, Modelo, EmpresaModelo, NotificacionStaff, BlogPost,
+    ForoPost, ForoRespuesta,
 )
 
 
@@ -300,5 +301,82 @@ class BlogPostType:
 @strawberry.type
 class BlogPostListResult:
     posts: List[BlogPostType]
+    total: int
+    has_more: bool
+
+
+# ─── Forum types ─────────────────────────────────────────────────────────────
+
+@strawberry.type
+class ForoRespuestaType:
+    id: strawberry.ID
+    contenido: str
+    autor_nombre: str
+    created_at: datetime
+
+    @strawberry.field
+    def empresa_nombre(self) -> Optional[str]:
+        return self.empresa.nombre_comercial if self.empresa_id else None
+
+    @strawberry.field
+    def empresa_slug(self) -> Optional[str]:
+        return self.empresa.slug if self.empresa_id else None
+
+
+@strawberry.type
+class ForoSubcategoriaChip:
+    id: strawberry.ID
+    nombre: str
+    slug: str
+
+
+@strawberry.type
+class ForoPostType:
+    id: strawberry.ID
+    titulo: str
+    contenido: str
+    autor_nombre: str
+    created_at: datetime
+
+    @strawberry.field
+    def empresa_nombre(self) -> Optional[str]:
+        return self.empresa.nombre_comercial if self.empresa_id else None
+
+    @strawberry.field
+    def empresa_slug(self) -> Optional[str]:
+        return self.empresa.slug if self.empresa_id else None
+
+    @strawberry.field
+    def subcategorias(self) -> List[ForoSubcategoriaChip]:
+        return list(self.subcategorias.all().order_by('nombre'))
+
+    # Convenience: first subcategoria slug for URL filtering
+    @strawberry.field
+    def subcategoria_slug(self) -> str:
+        first = self.subcategorias.first()
+        return first.slug if first else ''
+
+    @strawberry.field
+    def subcategoria_nombre(self) -> str:
+        first = self.subcategorias.first()
+        return first.nombre if first else ''
+
+    @strawberry.field
+    def respuestas_count(self) -> int:
+        return self.respuestas.filter(deleted=False).count()
+
+    @strawberry.field
+    def respuestas(self) -> List[ForoRespuestaType]:
+        return list(
+            ForoRespuesta.objects
+            .filter(post_id=self.pk, deleted=False)
+            .select_related('empresa')
+            .order_by('created_at')
+        )
+
+
+@strawberry.type
+class ForoPostListResult:
+    posts: List[ForoPostType]
     total: int
     has_more: bool
